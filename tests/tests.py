@@ -11,13 +11,13 @@ if not '../src' in sys.path :
 #----------------------------------------------------------------
 # Suite of tests
 #----------------------------------------------------------------
-class test_CC( unittest.TestCase ):
+class test_MDE( unittest.TestCase ):
     '''NOTE: Bizarre default of unittest class presumes
              methods names to be run begin with "test_" 
     '''
     # JP How to pass command line arg to class? verbose = False
     def __init__( self, *args, **kwargs):
-        super( test_CC, self ).__init__( *args, **kwargs )
+        super( test_MDE, self ).__init__( *args, **kwargs )
 
     #------------------------------------------------------------
     # 
@@ -53,21 +53,23 @@ class test_CC( unittest.TestCase ):
             self.ValidFiles[ file ] = read_csv( filename )
 
     #------------------------------------------------------------
-    # API
+    # MDE class API
     #------------------------------------------------------------
     def test_API_1( self ):
-        '''API 1'''
+        '''MDE class API 1'''
         if self.verbose : print ( " --- API 1 ---" )
 
-        from ManifoldDimExpand import ManifoldDimExpand
+        from MDE import MDE
 
         df = read_csv( '../data/Fly80XY_norm_1061.csv' )
 
-        MDE_df = ManifoldDimExpand( df, target = 'FWD', 
-                                    removeColumns = ['index','FWD','Left_Right'],
-                                    D = 5, lib = [1,300], pred = [301,600] )
-        self.assertTrue( 'variables' in MDE_df.columns )
-        self.assertTrue( 'rho'       in MDE_df.columns )
+        mde = MDE( df, target = 'FWD', 
+                   removeColumns = ['index','FWD','Left_Right'],
+                   D = 5, lib = [1,300], pred = [301,600] )
+        mde.Run()
+
+        self.assertTrue( 'variables' in mde.MDEOut.columns )
+        self.assertTrue( 'rho'       in mde.MDEOut.columns )
 
 #------------------------------------------------------------
 #
