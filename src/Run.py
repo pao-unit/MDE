@@ -9,7 +9,7 @@ from scipy.signal         import argrelextrema
 from sklearn.linear_model import LinearRegression
 
 # Local module from CausalCompression/src
-from SimplexRho_ColumnList import SimplexRho_ColumnList
+from CrossMapColumns import CrossMapColumns
 
 #-------------------------------------------------------------------
 #-------------------------------------------------------------------
@@ -42,7 +42,7 @@ def Run( self ):
         # For each d evaluate nested list of columns
         # Each sublist consists of current d MDEcolumns plus columns
         # Order doesn't matter, use set for efficiency
-        # First, set columns to list of all available non MDEcolumns 
+        # First, set columns to list of all available non MDEcolumns
         columns = list( set( dataColumns ) - set( self.MDEcolumns ) )
         # Create nested list of each available column with MDEcolumns
         columns = [ [c] + self.MDEcolumns for c in columns ]
@@ -50,28 +50,29 @@ def Run( self ):
         if a.debug:
             LogMsg(f'\n{d}-D Cross Map {a.target} -> {columns[:5]}')
             LogMsg( '---------------------------------------------------------' )
+            LogMsg( f'   CrossMapColumns -> {datetime.now()}' )
 
         # rhoD is dict of 'columns:target' : (rho, [columns]) pairs.
         # Note embedded = True
-        rhoD = SimplexRho_ColumnList( self.dataFrame,
-                                      columns         = columns,
-                                      target          = a.target, # E = 0,
-                                      Tp              = a.Tp,
-                                      tau             = a.tau,
-                                      exclusionRadius = a.exclusionRadius,
-                                      lib             = a.lib,
-                                      pred            = a.pred,
-                                      embedded        = True,
-                                      cores           = a.cores,
-                                      noTime          = a.noTime,
-                                      verbose         = a.verbose )
+        rhoD = CrossMapColumns( self.dataFrame,
+                                columns         = columns,
+                                target          = a.target, # E = 0,
+                                Tp              = a.Tp,
+                                tau             = a.tau,
+                                exclusionRadius = a.exclusionRadius,
+                                lib             = a.lib,
+                                pred            = a.pred,
+                                embedded        = True,
+                                cores           = a.cores,
+                                noTime          = a.noTime,
+                                verbose         = a.verbose )
 
         # Sort rhoD values by decreasing rho
         # L_rhoD is ranked list of tuples : (rho, [columns])
         L_rhoD = sorted( rhoD.values(), key = lambda x:x[0], reverse = True )
 
         if a.debug:
-            LogMsg( f'   SimplexRho_ColumnList -> {datetime.now()}' )
+            LogMsg( f'   CrossMapColumns <- {datetime.now()}' )
             LogMsg( f'      L_rhoD[:3] {L_rhoD[:3]}' )
 
         if a.noCCM :
@@ -99,7 +100,7 @@ def Run( self ):
                 EDimDF = EmbedDimension( dataFrame       = self.dataFrame,
                                          columns         = newColumn,
                                          target          = a.target,
-                                         maxE            = 15,
+                                         maxE            = a.maxE,
                                          lib             = a.lib,
                                          pred            = a.pred,
                                          Tp              = a.Tp,
@@ -108,8 +109,11 @@ def Run( self ):
                                          validLib        = [],
                                          noTime          = a.noTime,
                                          verbose         = a.verbose,
-                                         numProcess      = a.cores, # JP ?
+                                         numProcess      = a.maxE,
                                          showPlot        = False )
+
+                if a.debug :
+                    LogMsg( f'   EmbedDimension <- {datetime.now()}' )
 
                 # If firstEMax is True, return first (lowest E) local maximum.
                 # Find max E(rho)
@@ -120,8 +124,8 @@ def Run( self ):
                         iMax = iMax[0] # first element of array
                     else :
                         # no local maxima, last is max
-                        iMax = len( EDimDF['E'] ) - 1 
-                else : 
+                        iMax = len( EDimDF['E'] ) - 1
+                else :
                     iMax = EDimDF['rho'].round(4).argmax() # global maximum
 
                 maxRhoEDim = EDimDF['rho'].iloc[ iMax ].round(4)
@@ -157,6 +161,7 @@ def Run( self ):
                              noTime          = a.noTime )
 
                 if a.debug:
+                    LogMsg( f'   CCM <- {datetime.now()}' )
                     LogMsg( ccmDF.to_string() )
 
                 ccmVals = ccmDF[ f'{a.target}:{newColumn}' ].to_numpy()
@@ -186,7 +191,7 @@ def Run( self ):
 
         if a.verbose :
             LogMsg(f'{d}-D {self.MDEcolumns} rho {self.MDErho[-1]}')
-    
+
     #-------------------------------------------------------------
     # Auxiliary time delays
     #-------------------------------------------------------------
@@ -201,34 +206,38 @@ def Run( self ):
         # Add time delays
         # For each of the 1:D (D == MDE_iMax + 1 ) add args.timeDelay
         # delays to the MDEColumms, see if rho increases
-        for col_i in range( MDE_iMax + 1 ) :
+        # Include target as first column to evaluate
+        MDEcolumns_ = self.MDEcolumns[:MDE_iMax + 1]
+        evalColumns = [a.target] + MDEcolumns_
 
-            column_i = self.MDEcolumns[ col_i ]
+        for evalColumn in evalColumns :
 
-            embd = Embed( dataFrame = self.dataFrame, E = a.timeDelay + 1,
-                          tau = a.tau, columns = column_i, includeTime = False )
+            embd = Embed(dataFrame = self.dataFrame, E = a.timeDelay + 1,
+                         tau = a.tau, columns = evalColumn, includeTime = False)
 
             # Drop (t-0) first column
             embd = embd.iloc[:,1:]
 
-            # DataFrame for cross mapping, include target
-            tD_df = concat( [self.dataFrame.loc[:,a.target],
-                             self.dataFrame.loc[:,self.MDEcolumns[:MDE_iMax+1]],
-                             embd], axis = 1 )
+            # DataFrame for cross mapping, target is first column
+            tD_df = concat( [self.dataFrame.loc[:,evalColumns], embd], axis = 1 )
 
             # Cross map
-            cmap_tD = Simplex( dataFrame = tD_df, target = a.target,
-                               columns = tD_df.columns[1:], # ignore target
+            if evalColumn == a.target :
+                columns = tD_df.columns
+            else :
+                columns = tD_df.columns[1:] # ignore target
+
+            cmap_tD = Simplex( dataFrame = tD_df,
+                               target = a.target, columns = columns,
                                lib = a.lib, pred = a.pred, Tp = a.Tp,
                                tau = a.tau, embedded = True, noTime = True )
             cmap_tD_rho = ComputeError( cmap_tD['Observations'],
                                         cmap_tD['Predictions'] )['rho']
 
             if a.verbose :
-                msg = f'Embed {col_i + 1:>2} [{column_i}]+{a.timeDelay} ' +\
+                msg = f'Embed [{evalColumn}] + {a.timeDelay} ' +\
                       f'rho {cmap_tD_rho}'
                 self.LogMsg( msg )
-            
 
     self.elapsedTime = datetime.now() - self.startTime
 

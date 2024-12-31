@@ -4,7 +4,7 @@
 import time, argparse
 from   datetime        import datetime
 from   multiprocessing import Pool
-from   itertools       import repeat
+from   itertools       import repeat, starmap
 
 # Community modules
 from pandas import DataFrame, read_csv, concat
@@ -13,21 +13,20 @@ from pyEDM  import Simplex, ComputeError
 #----------------------------------------------------------------------------
 # 
 #----------------------------------------------------------------------------
-def SimplexRho_ColumnList( data, columns = [], target = None, E = 0,
-                           Tp = 1, tau = -1, exclusionRadius = 0,
-                           lib = None, pred = None, embedded = False,
-                           cores = 5, outputFile = None, noTime = False,
-                           verbose = False, debug = False, LogMsg = None ):
+def CrossMapColumns( data, columns = [], target = None, E = 0,
+                     Tp = 1, tau = -1, exclusionRadius = 0,
+                     lib = None, pred = None, embedded = False,
+                     cores = 5, noTime = False, outputFile = None,
+                     LogMsg = None, verbose = False, debug = False ):
 
-    '''Use multiprocessing Pool to process parallelize Simplex. 
-       columns is a list of columns to be cross mapped against
-       the target (-t). columns can be a list of single columns,
-       or list of multiple columns. 
+    '''Cross map target (-t) to columns (-c). 
+       columns can be a list of single columns, or list of multiple columns.
+       If cores > 1 multiprocessing is used.
        Return dict of 'columns:target' : (rho, column) pairs.
     '''
 
     if verbose and not LogMsg is None :
-        LogMsg( f'\tSimplexRho_ColumnList() start {datetime.now()}' )
+        LogMsg( f'\tCrossMapColumns() start {datetime.now()}' )
 
     startTime = time.time()
 
@@ -37,38 +36,42 @@ def SimplexRho_ColumnList( data, columns = [], target = None, E = 0,
     if not target :
         raise( RuntimeError( 'target required' ) )
 
-    # If no lib and pred, create from full data span
+    # If no lib or pred, create from full data span
     if not lib :
         lib = [ 1, data.shape[0] ]
     if not pred :
         pred = [ 1, data.shape[0] ]
 
-    # Dictionary of arguments for Pool : SimplexFunc
+    # Dictionary of arguments for starmap : SimplexFunc
     argsD = { 'target' : target, 'lib' : lib, 'pred' : pred, 'E' : E,
               'embedded' : embedded, 'exclusionRadius' : exclusionRadius,
               'Tp' : Tp, 'tau' : tau, 'noTime' : noTime }
 
-    # Create iterable for Pool.starmap, use repeated copies of argsD, data
+    # Create iterable for starmap, use repeated copies of argsD, data
     poolArgs = zip( columns, repeat( argsD ), repeat( data ) )
 
-    # Use pool.starmap to distribute among cores
-    with Pool( processes = cores ) as pool :
-        CMList = pool.starmap( SimplexFunc, poolArgs )
+    if cores > 1 :
+        # Use pool.starmap to distribute among cores
+        with Pool( processes = cores ) as pool :
+            CMList = pool.starmap( SimplexFunc, poolArgs )
+    else :
+        # No parallelization
+        CMList = [ _ for _ in starmap( SimplexFunc, poolArgs ) ]
 
     # Load CMList results into dictionary
-    SimplexRho_D = {}
+    CrossMap_D = {}
     for i in range( len( columns ) ) :
         key = ','.join( columns[i] )
-        SimplexRho_D[ f'{key}:{target}' ] = CMList[ i ] # ( rho, [cols] )
+        CrossMap_D[ f'{key}:{target}' ] = CMList[ i ] # ( rho, [cols] )
 
     if verbose and not LogMsg is None :
-        LogMsg( f'\tSimplexRho_ColumnList() finished {datetime.now()}' )
+        LogMsg( f'\tCrossMapColumns() finished {datetime.now()}' )
 
     if debug :
-        print( "SimplexRho_ColumnList() SimplexRho_D:" )
-        print( SimplexRho_D )
+        print( "CrossMapColumns() CrossMap_D:" )
+        print( CrossMap_D )
 
-    return SimplexRho_D
+    return CrossMap_D
 
 #----------------------------------------------------------------------------
 #----------------------------------------------------------------------------
@@ -95,8 +98,8 @@ def SimplexFunc( columns, argsD, data ):
 
 #----------------------------------------------------------------------------
 #----------------------------------------------------------------------------
-def SimplexRho_ColumnList_CmdLine():
-    '''Wrapper for SimplexRho_ColumnList with command line parsing'''
+def CrossMapColumns_CmdLine():
+    '''Wrapper for CrossMapColumns with command line parsing'''
 
     args = ParseCmdLine()
 
@@ -106,15 +109,15 @@ def SimplexRho_ColumnList_CmdLine():
     else:
         raise RuntimeError( "inputFile .csv required" )
 
-    # Call SimplexRho_ColumnList()
-    df = SimplexRho_ColumnList( data = dataFrame,
-                                columns = args.columns, target = args.target,
-                                E = args.E, Tp = args.Tp, tau = args.tau,
-                                exclusionRadius = args.exclusionRadius,
-                                lib = args.lib, pred = args.pred,
-                                cores = args.cores, noTime = args.noTime,
-                                outputFile = args.outputFile,
-                                verbose = args.verbose )
+    # Call CrossMapColumns()
+    df = CrossMapColumns( data = dataFrame,
+                          columns = [args.columns], target = args.target,
+                          E = args.E, Tp = args.Tp, tau = args.tau,
+                          exclusionRadius = args.exclusionRadius,
+                          lib = args.lib, pred = args.pred,
+                          cores = args.cores, noTime = args.noTime,
+                          outputFile = args.outputFile,
+                          verbose = args.verbose, debug = args.debug )
 
 #----------------------------------------------------------------------------
 #----------------------------------------------------------------------------
@@ -164,7 +167,7 @@ def ParseCmdLine():
                         default = -1,
                         help    = 'tau.')
 
-    parser.add_argument('-cols', '--columns', nargs = '*',
+    parser.add_argument('-c', '--columns', nargs = '*',
                         dest    = 'columns', type = str, 
                         action  = 'store',
                         default = [],
@@ -200,6 +203,12 @@ def ParseCmdLine():
                         default = False,
                         help    = 'verbose.')
 
+    parser.add_argument('-g', '--debug',
+                        dest    = 'debug',
+                        action  = 'store_true',
+                        default = False,
+                        help    = 'debug.')
+
     args = parser.parse_args()
 
     return args
@@ -207,4 +216,4 @@ def ParseCmdLine():
 #----------------------------------------------------------------------------
 # Provide for cmd line invocation and clean module loading
 if __name__ == "__main__":
-    SimplexRho_ColumnList_CmdLine()
+    CrossMapColumns_CmdLine()

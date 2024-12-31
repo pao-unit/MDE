@@ -140,11 +140,17 @@ def ParseCmdLine():
                         default = 0.5,
                         help    = 'embedDimRhoMin threshold.')
 
+    parser.add_argument('-mE', '--maxE',
+                        dest    = 'maxE', type = int,
+                        action  = 'store',
+                        default = 15,
+                        help    = 'EmbeddingDimension maxE.')
+
     parser.add_argument('-fE', '--firstEMax',
                         dest    = 'firstEMax',
                         action  = 'store_true',
                         default = False,
-                        help    = 'firstEMax.')
+                        help    = 'EmbeddingDimension firstEMax.')
 
     parser.add_argument('-tD', '--timeDelay',
                         dest    = 'timeDelay', type = int, 
@@ -156,7 +162,7 @@ def ParseCmdLine():
                         dest    = 'cores', type = int, 
                         action  = 'store',
                         default = 5,
-                        help    = 'Multiprocessing cores.')
+                        help    = 'CrossMapColumns cores.')
 
     parser.add_argument('-n', '--noConsoleOut',
                         dest    = 'consoleOut',
