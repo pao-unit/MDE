@@ -1,7 +1,8 @@
-
+# Python distribution modules
 import sys
 import unittest
 
+# Community modules
 from pandas import read_csv
 
 # Monkey patch sys.path for MDE app
