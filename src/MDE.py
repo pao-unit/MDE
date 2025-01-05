@@ -4,6 +4,7 @@ from os.path  import exists
 from datetime import datetime
 from pickle   import dump
 from math     import nan
+import warnings
 
 # Community modules
 from pandas     import read_csv, DataFrame
@@ -13,9 +14,13 @@ from matplotlib import pyplot as plt
 # Local modules
 from CLI_Parser import ParseCmdLine
 
+# Ignore DeprecationWarning for multiprocessing start_method fork :
+# docs.python.org/3/library/multiprocessing.html#contexts-and-start-methods
+warnings.filterwarnings( "ignore", category = DeprecationWarning )
+
 #-----------------------------------------------------------------------
 class MDE:
-    '''Class for Manifold Dimensional Expansion 
+    '''Class for Manifold Dimensional Expansion
        ManifoldDimExpand.py is a CLI to instantiate, configure and Run().
 
        Uses args object from CLI_Parser.ParseCmdLine to store class
@@ -28,7 +33,7 @@ class MDE:
     #-------------------------------------------------------------------
     def __init__( self, dataFrame = None, dataFile = None,
                   dataName = None, removeTime = False, noTime = False,
-                  columnNames = [], initDataColumns = [], removeColumns = [], 
+                  columnNames = [], initDataColumns = [], removeColumns = [],
                   D = 3, target = None, lib = [], pred = [],
                   Tp = 1, tau = -1, exclusionRadius = 0,
                   sample = 20, pLibSizes = [10, 15, 85, 90],
@@ -41,7 +46,7 @@ class MDE:
 
         '''Constructor
 
-           If dataFrame is None LoadData() / ReadData() called at end 
+           If dataFrame is None LoadData() / ReadData() called at end
            of constructor.
         '''
         
@@ -131,7 +136,7 @@ class MDE:
             for columnName in self.args.columnNames :
                 colD[ columnName ] = \
                     [ col for col in columns if columnName in col ]
-                
+
             columns = list( chain.from_iterable( colD.values() ) )
 
             # In case the target vector was filtered out, replace it
@@ -178,8 +183,7 @@ class MDE:
                 try:
                     data = data_npz[ self.args.dataName ]
                 except KeyError as kerr:
-                    msg = '\nReadData(): Error: data_npz keys: {}\n'.format(
-                        data_npz.files )
+                    msg = f'\nReadData(): Error: .npz keys: {data_npz.files}\n'
                     self.LogMsg( msg )
                     raise KeyError( kerr )
             else :
@@ -209,7 +213,7 @@ class MDE:
             self.LogMsg( msg )
 
         if self.args.removeTime :
-            df = df.drop( columns = df.columns[0] ) 
+            df = df.drop( columns = df.columns[0] )
 
         return df
 
