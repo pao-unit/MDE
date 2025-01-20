@@ -4,18 +4,18 @@ from argparse import ArgumentParser
 #--------------------------------------------------------------
 #--------------------------------------------------------------
 def ParseCmdLine():
-    
+
     parser = ArgumentParser(
         description = 'Manifold Dimensional Expansion' )
 
     parser.add_argument('-d', '--dataFile',
-                        dest    = 'dataFile', type = str, 
+                        dest    = 'dataFile', type = str,
                         action  = 'store',
                         default = None,
                         help    = 'Input data file.')
 
     parser.add_argument('-rc', '--removeColumns', nargs = '*',
-                        dest    = 'removeColumns', type = str, 
+                        dest    = 'removeColumns', type = str,
                         action  = 'store',
                         default = [],
                         help    = 'data columns to remove.')
@@ -33,91 +33,91 @@ def ParseCmdLine():
                         help    = 'noTime.')
 
     parser.add_argument('-dN', '--dataName',
-                        dest    = 'dataName', type = str, 
+                        dest    = 'dataName', type = str,
                         action  = 'store',
                         default = None,
                         help    = 'Input .npz data name.')
 
     parser.add_argument('-cn', '--columnNames', nargs = '*',
-                        dest    = 'columnNames', type = str, 
+                        dest    = 'columnNames', type = str,
                         action  = 'store',
                         default = [],
                         help    = 'Data column names (partial match).')
 
     parser.add_argument('-di', '--initDataColumns', nargs = '*',
-                        dest    = 'initDataColumns', type = str, 
+                        dest    = 'initDataColumns', type = str,
                         action  = 'store',
                         default = [],
                         help    = 'Initial .npy / npz column names.')
 
     parser.add_argument('-od', '--outDir',
-                        dest    = 'outDir', type = str, 
+                        dest    = 'outDir', type = str,
                         action  = 'store',
                         default = None,
                         help    = 'Output directory for csv file.')
 
     parser.add_argument('-o', '--outFile',
-                        dest    = 'outFile', type = str, 
+                        dest    = 'outFile', type = str,
                         action  = 'store',
                         default = None,
                         help    = 'Output csv file.')
 
     parser.add_argument('-lf', '--logFile',
-                        dest    = 'logFile', type = str, 
+                        dest    = 'logFile', type = str,
                         action  = 'store',
                         default = None,
                         help    = 'Output log file.')
 
     parser.add_argument('-D', '--D',
-                        dest    = 'D', type = int, 
+                        dest    = 'D', type = int,
                         action  = 'store',
                         default = 3,
-                        help    = 'D.')
+                        help    = 'MDE maximum dimension.')
 
     parser.add_argument('-T', '--Tp',
-                        dest    = 'Tp', type = int, 
+                        dest    = 'Tp', type = int,
                         action  = 'store',
                         default = 1,
                         help    = 'Tp.')
 
     parser.add_argument('-tau', '--tau',
-                        dest    = 'tau', type = int, 
+                        dest    = 'tau', type = int,
                         action  = 'store',
                         default = -1,
                         help    = 'tau.')
 
     parser.add_argument('-t', '--target',
-                        dest    = 'target', type = str, 
+                        dest    = 'target', type = str,
                         action  = 'store',
                         default = None,
                         help    = 'Data target name.')
 
     parser.add_argument('-l', '--lib', nargs = '*',
-                        dest    = 'lib', type = int, 
+                        dest    = 'lib', type = int,
                         action  = 'store',
                         default = [],
                         help    = 'library indices.')
 
     parser.add_argument('-p', '--pred', nargs = '*',
-                        dest    = 'pred', type = int, 
+                        dest    = 'pred', type = int,
                         action  = 'store',
                         default = [],
                         help    = 'prediction indices.')
 
     parser.add_argument('-xr', '--exclusionRadius',
-                        dest    = 'exclusionRadius', type = int, 
+                        dest    = 'exclusionRadius', type = int,
                         action  = 'store',
                         default = 0,
                         help    = 'Exclusion Radius.')
 
     parser.add_argument('-s', '--sample',
-                        dest    = 'sample', type = int, 
+                        dest    = 'sample', type = int,
                         action  = 'store',
                         default = 20,
                         help    = 'CCM sample.')
 
     parser.add_argument('-L', '--pLibSizes', nargs = '*',
-                        dest    = 'pLibSizes', type = int, 
+                        dest    = 'pLibSizes', type = int,
                         action  = 'store',
                         default = [10,15,85,90],
                         help    = 'CCM pLibSizes.')
@@ -129,13 +129,19 @@ def ParseCmdLine():
                         help    = 'no CCM.')
 
     parser.add_argument('-ccs', '--ccmSlope',
-                        dest    = 'ccmSlope', type = float, 
+                        dest    = 'ccmSlope', type = float,
                         action  = 'store',
                         default = 0.002,
                         help    = 'CCM slope threshold.')
 
+    parser.add_argument('-E', '--E',
+                        dest    = 'E', type = int,
+                        action  = 'store',
+                        default = 0,
+                        help    = 'Takens embedding dimension.')
+
     parser.add_argument('-emin', '--embedDimRhoMin',
-                        dest    = 'embedDimRhoMin', type = float, 
+                        dest    = 'embedDimRhoMin', type = float,
                         action  = 'store',
                         default = 0.5,
                         help    = 'embedDimRhoMin threshold.')
@@ -153,13 +159,13 @@ def ParseCmdLine():
                         help    = 'EmbeddingDimension firstEMax.')
 
     parser.add_argument('-tD', '--timeDelay',
-                        dest    = 'timeDelay', type = int, 
+                        dest    = 'timeDelay', type = int,
                         action  = 'store',
                         default = 0,
                         help    = 'Number of time delays to add.')
 
     parser.add_argument('-C', '--cores',
-                        dest    = 'cores', type = int, 
+                        dest    = 'cores', type = int,
                         action  = 'store',
                         default = 5,
                         help    = 'CrossMapColumns cores.')
@@ -189,7 +195,7 @@ def ParseCmdLine():
                         help    = 'plot.')
 
     parser.add_argument('-title', '--title',
-                        dest    = 'title', type = str, 
+                        dest    = 'title', type = str,
                         action  = 'store',
                         default = None,
                         help    = 'Plot title.')

@@ -7,7 +7,7 @@ from math     import nan
 import warnings
 
 # Community modules
-from pandas     import read_csv, DataFrame
+from pandas     import read_csv, read_feather, DataFrame
 from numpy      import array, load
 from matplotlib import pyplot as plt
 
@@ -38,7 +38,7 @@ class MDE:
                   Tp = 1, tau = -1, exclusionRadius = 0,
                   sample = 20, pLibSizes = [10, 15, 85, 90],
                   noCCM = False, ccmSlope = 0.01,
-                  embedDimRhoMin = 0.5, firstEMax = False,
+                  E = 0, embedDimRhoMin = 0.5, firstEMax = False,
                   outDir = None, outFile = None, logFile = None,
                   cores = 5, consoleOut = True,
                   verbose = False, debug = False,
@@ -71,6 +71,7 @@ class MDE:
             args.pLibSizes       = pLibSizes
             args.noCCM           = noCCM
             args.ccmSlope        = ccmSlope
+            args.E               = E
             args.embedDimRhoMin  = embedDimRhoMin
             args.firstEMax       = firstEMax
             args.outDir          = outDir
@@ -122,7 +123,7 @@ class MDE:
 
     #-------------------------------------------------------------------
     def LoadData( self ):
-        '''Wrapper for ReadData() that reads .csv .npy .npz
+        '''Wrapper for ReadData() that reads .csv .npy .npz .feather
            Optionally filter columns with partial match to args.columnNames
         '''
 
@@ -177,6 +178,9 @@ class MDE:
         if '.csv' in dataFile[-4:] :
             df = read_csv( dataFile )
 
+        elif '.feather' in dataFile[-8:] :
+            df = read_feather( dataFile )
+            
         elif '.npz' in dataFile[-4:] or '.npy' in dataFile[-4:] :
             if '.npz' in dataFile[-4:] :
                 data_npz = load( dataFile )

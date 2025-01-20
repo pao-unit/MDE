@@ -22,7 +22,7 @@ def Run( self ):
     a      = self.args
     LogMsg = self.LogMsg
 
-    # libSizes from percentiles in pLibSizes
+    # CCM libSizes from percentiles in pLibSizes
     self.libSizes = [ int( self.dataFrame.shape[0] * (p/100) )
                       for p in a.pLibSizes ]
     # libSizes ndarray for CCM convergence slope esimate
@@ -84,7 +84,6 @@ def Run( self ):
             #------------------------------------------------------------
             # Validate addition of newColumn with CCM
             #------------------------------------------------------------
-            # First need an embedding dimension
             maxCol_i  = None
             newColumn = None
 
@@ -93,45 +92,50 @@ def Run( self ):
                 columns_i = L_rhoD[col_i][1] # List of columns
                 newColumn = columns_i[ 0 ]   # First item is new column
 
-                if a.debug :
-                    LogMsg( f'   EmbedDimension -> {datetime.now()}' )
-                    LogMsg( f'      L_rhoD[col_i] {columns_i}' )
-
-                EDimDF = EmbedDimension( dataFrame       = self.dataFrame,
-                                         columns         = newColumn,
-                                         target          = a.target,
-                                         maxE            = a.maxE,
-                                         lib             = a.lib,
-                                         pred            = a.pred,
-                                         Tp              = a.Tp,
-                                         tau             = a.tau,
-                                         exclusionRadius = a.exclusionRadius,
-                                         validLib        = [],
-                                         noTime          = a.noTime,
-                                         verbose         = a.verbose,
-                                         numProcess      = a.maxE,
-                                         showPlot        = False )
-
-                if a.debug :
-                    LogMsg( f'   EmbedDimension <- {datetime.now()}' )
-
-                # If firstEMax is True, return first (lowest E) local maximum.
-                # Find max E(rho)
-                if a.firstEMax :
-                    iMax = argrelextrema( EDimDF['rho'].to_numpy(), greater )[0]
-
-                    if len( iMax ) :
-                        iMax = iMax[0] # first element of array
-                    else :
-                        # no local maxima, last is max
-                        iMax = len( EDimDF['E'] ) - 1
+                # First need CCM embedding dimension
+                if a.E > 0:
+                    # Takens embedding dimension specified in args
+                    maxRhoEDim = L_rhoD[col_i][0].round(4)
+                    maxEDim    = a.E
                 else :
-                    iMax = EDimDF['rho'].round(4).argmax() # global maximum
+                    # Estimate E as local or global maximum EmbedDimension()
+                    if a.debug :
+                        LogMsg( f'   EmbedDimension -> {datetime.now()}' )
+                        LogMsg( f'      L_rhoD[col_i] {columns_i}' )
 
-                maxRhoEDim = EDimDF['rho'].iloc[ iMax ].round(4)
-                maxEDim    = EDimDF['E'].iloc[ iMax ]
+                    EDimDF = EmbedDimension( dataFrame       = self.dataFrame,
+                                             columns         = newColumn,
+                                             target          = a.target,
+                                             maxE            = a.maxE,
+                                             lib             = a.lib,
+                                             pred            = a.pred,
+                                             Tp              = a.Tp,
+                                             tau             = a.tau,
+                                             exclusionRadius = a.exclusionRadius,
+                                             validLib        = [],
+                                             noTime          = a.noTime,
+                                             verbose         = a.verbose,
+                                             numProcess      = a.maxE,
+                                             showPlot        = False )
 
-                self.EDim[ f'{newColumn}:{a.target}' ] = maxEDim
+                    if a.debug :
+                        LogMsg( f'   EmbedDimension <- {datetime.now()}' )
+
+                    # If firstEMax True, return first (lowest E) local maximum
+                    # Find max E(rho)
+                    if a.firstEMax :
+                        iMax = argrelextrema(EDimDF['rho'].to_numpy(),greater)[0]
+
+                        if len( iMax ) :
+                            iMax = iMax[0] # first element of array
+                        else :
+                            # no local maxima, last is max
+                            iMax = len( EDimDF['E'] ) - 1
+                    else :
+                        iMax = EDimDF['rho'].round(4).argmax() # global maximum
+
+                    maxRhoEDim = EDimDF['rho'].iloc[ iMax ].round(4)
+                    maxEDim    = EDimDF['E'].iloc[ iMax ]
 
                 if a.debug :
                     LogMsg(f'      EDim {columns_i[0]} ' +\
@@ -140,6 +144,8 @@ def Run( self ):
                 # Qualify embedding with embedDimRhoMin
                 if maxRhoEDim < a.embedDimRhoMin :
                     continue # Keep looking
+
+                self.EDim[ f'{newColumn}:{a.target}' ] = maxEDim
 
                 #-------------------------------------------------------------
                 # CCM
@@ -179,6 +185,9 @@ def Run( self ):
                     break # This vector is good
                 else :
                     maxCol_i = None
+
+            # <---- for col_i in range( len( L_rhoD )  ) :
+            # <-------------------------------------------
 
             if maxCol_i is not None :
                 # Add newColumn to MDEcolumns
