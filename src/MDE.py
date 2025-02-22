@@ -39,8 +39,8 @@ class MDE:
                   sample = 20, pLibSizes = [10, 15, 85, 90],
                   noCCM = False, ccmSlope = 0.01,
                   E = 0, embedDimRhoMin = 0.5, firstEMax = False,
-                  outDir = None, outFile = None, logFile = None,
-                  cores = 5, consoleOut = True,
+                  outDir = None, outFile = None, outCSV = None,
+                  logFile = None, cores = 5, consoleOut = True,
                   verbose = False, debug = False,
                   plot = False, title = None, args = None ):
 
@@ -76,6 +76,7 @@ class MDE:
             args.firstEMax       = firstEMax
             args.outDir          = outDir
             args.outFile         = outFile
+            args.outCSV          = outCSV
             args.logFile         = logFile
             args.cores           = cores
             args.consoleOut      = consoleOut
@@ -260,11 +261,16 @@ class MDE:
 
     #----------------------------------------------------------
     def Output( self ):
-        '''MDE output: pickle dump of the MDE class object'''
-        if self.args.outFile :
-            #self.MDEOut.to_csv( self.args.outFile, index = False )
+        '''MDE output:
+           MDEOut .csv
+           pickle dump of MDE class object'''
+        if self.args.outCSV :
+            outFile = f'{self.args.outDir}/{self.args.outCSV}'
+            self.MDEOut.to_csv( outFile, index = False )
 
-            with open( self.args.outFile, 'wb' ) as f :
+        if self.args.outFile :
+            outFile = f'{self.args.outDir}/{self.args.outFile}'
+            with open( outFile, 'wb' ) as f :
                 dump( self, f )
 
     #----------------------------------------------------------

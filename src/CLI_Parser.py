@@ -53,11 +53,17 @@ def ParseCmdLine():
     parser.add_argument('-od', '--outDir',
                         dest    = 'outDir', type = str,
                         action  = 'store',
-                        default = None,
-                        help    = 'Output directory for csv file.')
+                        default = None,  # if None set to ./ in MDE constructor
+                        help    = 'Output directory.')
 
     parser.add_argument('-o', '--outFile',
                         dest    = 'outFile', type = str,
+                        action  = 'store',
+                        default = None,
+                        help    = 'Output MDE class pickle file.')
+
+    parser.add_argument('-oc', '--outCSV',
+                        dest    = 'outCSV', type = str,
                         action  = 'store',
                         default = None,
                         help    = 'Output csv file.')
