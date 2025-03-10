@@ -2,34 +2,41 @@
 
 # Python distribution modules
 import argparse
+from   os        import environ # Wayland Gnome warning
 from   sys       import argv
 from   datetime  import datetime
 from   itertools import chain
 
 # Community modules
-from sklearn.decomposition   import PCA
-from sklearn.linear_model    import LinearRegression
-#from sklearn.metrics         import root_mean_squared_error
-from pydiffmap               import diffusion_map as dmap
+from sklearn.decomposition import PCA
+from sklearn.linear_model  import LinearRegression
+#from sklearn.metrics       import root_mean_squared_error
+from pydiffmap             import diffusion_map as dmap
 #from pydiffmap.visualization import embedding_plot, data_plot
-from pyEDM                   import Simplex, ComputeError
+from pyEDM                 import Simplex, ComputeError
 
-from numpy  import abs, arange, corrcoef, full, load, sum
-from pandas import read_csv, DataFrame
+from numpy  import abs, arange, corrcoef, full, nanmin, nanmax, load, sum
+from pandas import read_csv, DataFrame, read_feather
 
 import matplotlib.pyplot as plt
+
+# Silence: Warning: Ignoring XDG_SESSION_TYPE=wayland on Gnome
+environ["XDG_SESSION_TYPE"] = "xcb"
 
 #-----------------------------------------------------------------------
 class Evaluate:
     '''Compute MDE, Diffusion Map, PCA decompositions for n = args.components
        Training   set: args.library of data columns. 
        Prediction set: args.prediction
-       Project (transform) the modes onto the args.prediction test set columns.
-       Use the projected (transformed) modes to predict args.predictVar
+
+       MDE uses multivariate Simplex projection of --mde_columns
+       PCA & Diffusion Map project (transform) the modes onto the
+       args.prediction test set columns.
+       The projected (transformed) modes are used to predict args.predictVar
        over the test set span args.prediction by linear least squares.
 
-       dataFrame is the entire data set, passed in or read from .csv, .npy
-       data      is the subset without target decomposed by PCA, DMap
+       dataFrame is entire data set passed in or read from .csv .npy .feather
+       data      is the subset without target to be decomposed by PCA, DMap
 
        Arguments : These select data columns for PCA & DMap processing
        -cr --columns_range : (start,stop) indices for data columns
@@ -40,17 +47,28 @@ class Evaluate:
        -m --mde_columns : MDE columns
 
        -n --components  : number of PCA, Diffusion Map components
+
+       -mm --minMax     : apply min/max scaler to data and predict plot
+
+       -rho --plotRho   : Label data / pred panel with R instead of CAE
+
+       Test on Fly FWD
+       ./Evaluate.py -d ../../CausalCompression/data/Fly80XY_norm_1061.csv
+       -cr 1 80 -r FWD -n 5 -m TS33 TS4 TS8 TS9 TS32 -eps 0.05 -k 40 -P
     '''
 
     # Import class methods
 
     #-------------------------------------------------------------------
     def __init__( self, dataFrame = None, dataFile = None, outFile = None,
-                  columns_range = [], i_columns = [], columnMatch = [], 
-                  mde_columns = [], predictVar = None, library = [],
-                  prediction = [], tau = -1, Tp = 0, components = 3,
-                  dmap_k = 5, plot = False, maxN = 7, figsize = (8,8),
-                  xlim = None, verbose = False, args = None ):
+                  mde_columns = [],  columns_range = [], i_columns = [],
+                  columnMatch = [], removeColumns = [], removeTime = False,
+                  initDataColumns = [], predictVar = None, library = [],
+                  prediction = [], Tp = 0, components = 3,
+                  dmap_k = 5, dmap_epsilon = 'bgh', dmap_alpha = 0.5,
+                  plot = False, plotRho = False, minMax = False,
+                  maxN = 7, figsize = (8,8), xlim = None, verbose = False,
+                  args = None ):
 
         '''Constructor
            If dataFrame is None call ReadData()
@@ -58,24 +76,30 @@ class Evaluate:
         if args is None :
             args = ParseCmdLine() # default values
             # Set argument values into args
-            args.dataFile      = dataFile
-            args.outFile       = outFile
-            args.columns_range = columns_range
-            args.i_columns     = i_columns
-            args.columnMatch   = columnMatch
-            args.mde_columns   = mde_columns
-            args.predictVar    = predictVar
-            args.library       = library
-            args.prediction    = prediction
-            args.tau           = tau
-            args.Tp            = Tp
-            args.components    = components
-            args.dmap_k        = dmap_k
-            args.plot          = plot
-            args.maxN          = maxN
-            args.figsize       = figsize
-            args.xlim          = xlim
-            args.verbose       = verbose
+            args.dataFile        = dataFile
+            args.outFile         = outFile
+            args.mde_columns     = mde_columns
+            args.columns_range   = columns_range
+            args.i_columns       = i_columns
+            args.columnMatch     = columnMatch
+            args.removeColumns   = removeColumns
+            args.removeTime      = removeTime
+            args.initDataColumns = initDataColumns
+            args.predictVar      = predictVar
+            args.library         = library
+            args.prediction      = prediction
+            args.Tp              = Tp
+            args.components      = components
+            args.dmap_k          = dmap_k
+            args.dmap_epsilon    = dmap_epsilon
+            args.dmap_alpha      = dmap_alpha
+            args.plot            = plot
+            args.plotRho         = plotRho
+            args.minMax          = minMax
+            args.maxN            = maxN
+            args.figsize         = figsize
+            args.xlim            = xlim
+            args.verbose         = verbose
 
         # Class members
         self.args            = args
@@ -112,6 +136,7 @@ class Evaluate:
 
         self.startTime       = None
         self.elapsedTime     = None
+        self.scaler          = None
 
         if dataFrame is None and dataFile is None :
             msg = f'Evaluate() dataFrame or dataFile required.'
@@ -120,12 +145,23 @@ class Evaluate:
         # Initialization
         if self.dataFrame is None :
             self.ReadData() # Load dataFile into self.dataFrame
-        else :
-            # Assign data for PCA, DMap, remove predictVar
-            self.data = self.dataFrame.drop( args.predictVar )
 
-            if args.verbose :
-                print( 'Evaluate(): data columns ', self.data.columns )
+        self.FilterData() # Subset dataFrame into data for PCA, DMap
+
+        # Assign scaler function for data & prediction plot
+        if args.minMax :
+            def scalerFunc( arg ) :
+                min_, max_ = nanmin( arg ), nanmax( arg )
+                if ( max_ - min_ ) == 0 :
+                    max_, min_ = 1, 0
+                    print( 'WARN: minMax scaler divide by zero' )
+                scaled = ( arg - min_ ) / ( max_ - min_ )
+                return scaled
+        else :
+            def scalerFunc( arg ) :
+                return arg
+
+        self.scaler = scalerFunc
 
         self.Validate()
 
@@ -164,7 +200,7 @@ class Evaluate:
 
         self.startTime = datetime.now()
         if args.verbose :
-            msg = f'\nMDE Evaluate >------------------------\n' +\
+            msg = '\nMDE Evaluate >------------------------\n' +\
                 f'  {self.startTime}\n--------------------------------------\n'
             print( msg )
 
@@ -188,11 +224,9 @@ class Evaluate:
 
         # MDE --------------------------------------------------------------
         self.mde = Simplex( dataFrame = df,
-                            target = args.predictVar,
-                            columns = args.mde_columns,
+                            target = args.predictVar, columns = args.mde_columns,
                             lib = args.library, pred = args.prediction,
-                            Tp = args.Tp, tau = args.tau, embedded = True,
-                            showPlot = False )
+                            Tp = args.Tp, embedded = True, showPlot = False )
 
         self.mdeCAE = round( CAE( self.mde['Observations'],
                                   self.mde['Predictions'] ), 2 )
@@ -238,8 +272,11 @@ class Evaluate:
 
         # Diffusion Map ------------------------------------------------------
         # Initialize Diffusion map object.
-        self.dmap = dmap.DiffusionMap.from_sklearn( n_evecs = args.components,
-                                                    k = args.dmap_k, alpha=0.5 )
+        neighbor_params = {'n_jobs': -1, 'algorithm': 'kd_tree'}
+        self.dmap = dmap.DiffusionMap.from_sklearn(
+            n_evecs = args.components, k = args.dmap_k,
+            epsilon = args.dmap_epsilon, alpha = args.dmap_alpha,
+            neighbor_params = neighbor_params )
 
         # Fit to data and return the diffusion map.
         self.dmap.fit( self.data_lib )
@@ -254,8 +291,8 @@ class Evaluate:
 
         self.dmapCAE = round( CAE( self.predictVar_pred, self.dmapLinPred ), 2 )
         dmapErr      = ComputeError( self.predictVar_pred, self.dmapLinPred )
-        self.dmapRMSE      = round( dmapErr['RMSE'],  3 )
-        self.dmapCorrCoeff = round( dmapErr['rho'],   3 )
+        self.dmapRMSE      = round( dmapErr['RMSE'], 3 )
+        self.dmapCorrCoeff = round( dmapErr['rho'],  3 )
         self.dmapRsqr      = round( self.dmapCorrCoeff**2, 3 )
 
         print( '\tdMap: CAE', self.dmapCAE, ' RMSE', self.dmapRMSE,
@@ -264,14 +301,15 @@ class Evaluate:
         self.elapsedTime = datetime.now() - self.startTime
 
         if args.verbose :
-            msg = f'\nMDE Evaluate <------------------------\n' +\
+            msg = '\nMDE Evaluate <------------------------\n' +\
                   f'  ET {self.elapsedTime}' +\
-                   '\n--------------------------------------\n'
+                  '\n--------------------------------------\n'
             print( msg )
 
     #---------------------------------------------------------------------
     def Plot( self ) :
-        args = self.args
+        args   = self.args
+        scaler = self.scaler
 
         fig, axs = plt.subplots( 4, 1, sharex = True, figsize = args.figsize )
 
@@ -290,18 +328,32 @@ class Evaluate:
         x      = arange( 1, self.dataFrame.shape[0] + 1 )
         x_lib  = [x for x in range(args.library[0],    args.library[1]    + 1)]
         x_pred = [x for x in range(args.prediction[0], args.prediction[1] + 1)]
+        x_i    = arange( len( x_pred ) )
 
         # Data & Predictions ------
+        if args.plotRho :
+            dataLabels = {'Type'  : 'R',
+                          'MDE'   : f'MDE   {self.mdeCorrCoeff:.2f}',
+                          'D-Map' : f'D-Map {self.dmapCorrCoeff:.2f}',
+                          'PCA'   : f'PCA    {self.pcaCorrCoeff:.2f}'}
+        else : # annotate rho instead of CAE
+            dataLabels = {'Type'  : 'CAE',
+                          'MDE'   : f'MDE   {self.mdeCAE:.2f}',
+                          'D-Map' : f'D-Map {self.dmapCAE:.2f}',
+                          'PCA'   : f'PCA    {self.pcaCAE:.2f}'}
+
         ax = axs[0]
-        ax.plot( x_pred, self.predictVar_pred,
+        ax.plot( x_pred, scaler( self.predictVar_pred ),
                  label = args.predictVar, color = 'black', lw = lw )
-        ax.plot( x_pred, self.mde['Predictions'][args.Tp :],
-                 label = f'MDE   {self.mdeCAE:.2f}', lw = lw )
-        ax.plot( x_pred, self.dmapLinPred,
-                 label = f'D-Map {self.dmapCAE:.2f}', lw = lw )
-        ax.plot( x_pred, self.pcaLinPred,
-                 label = f'PCA    {self.pcaCAE:.2f}', lw = lw )
-        ax.legend( title = 'CAE', bbox_to_anchor = (1., 1),
+
+        ax.plot( x_pred, scaler( self.mde.loc[x_i,'Predictions'] ),
+                 label = dataLabels['MDE'], lw = lw )
+
+        ax.plot( x_pred, scaler( self.dmapLinPred ),
+                 label = dataLabels['D-Map'], lw = lw )
+        ax.plot( x_pred, scaler( self.pcaLinPred ),
+                 label = dataLabels['PCA'], lw = lw )
+        ax.legend( title = dataLabels['Type'], bbox_to_anchor = (1., 1),
                    loc = 'upper left' )
 
         # MDE ---------------------
@@ -335,8 +387,8 @@ class Evaluate:
 
     #--------------------------------------------------------------
     def ReadData( self ) :
-        '''Read data from .npy or .csv
-        If dataFile csv : return DataFrame
+        '''Read data from .npy .csv .feather
+        If dataFile csv feather : return DataFrame
         If dataFile npy : return DataFrame with columns [c0, c1, c2, ...]
                           First n column names can be specified with
                           self.args.initColumns
@@ -354,6 +406,9 @@ class Evaluate:
 
         if '.csv' in dataFile[-4:] :
             df = read_csv( dataFile )
+
+        elif '.feather' in dataFile[-8:] :
+            df = read_feather( dataFile )
 
         elif '.npy' in dataFile[-4:] :
             data = load( dataFile )
@@ -385,7 +440,13 @@ class Evaluate:
 
         self.dataFrame = df
 
-        # Filter/subset columns for PCA, dMap data
+    #--------------------------------------------------------------
+    def FilterData( self ) :
+        '''Filter/subset columns for PCA, dMap data'''
+
+        args = self.args # Shorthand
+        df   = self.dataFrame
+
         if args.columns_range : # 0-offset column indices
             col_i   = arange( args.columns_range[0], args.columns_range[1] )
             columns = df.columns[ col_i ].to_list()
@@ -403,7 +464,7 @@ class Evaluate:
 
             columns = list( chain.from_iterable( colD.values() ) )
 
-            msg = f'ReadData(): columns matched to {len(columns)} columns.'
+            msg = f'FilterData(): columns matched to {len(columns)} columns.'
             print( msg )
 
         else :
@@ -420,7 +481,7 @@ class Evaluate:
                 columns_ = columns
             else :
                 columns_ = columns[:5] + columns[-5:]
-            print( "DataFrame shape:", self.dataFrame.shape,
+            print( "FilterData(): DataFrame shape:", self.dataFrame.shape,
                    "\n data shape:", self.data.shape,
                    "\ncolumns:", columns_, "\ntarget:", args.predictVar )
 
@@ -447,21 +508,27 @@ def ParseCmdLine( args = argv ):
                         action = 'store', default = None,
                         help = 'Output file')
 
+    # mde_columns are the columns used to predict predictVar with Simplex/MDE
+    parser.add_argument('-m', '--mde_columns',
+                        dest   = 'mde_columns', nargs = '+', type = str, 
+                        action = 'store', default = None,
+                        help = 'MDE data column labels')
+
     # These columns arguments select columns from dataFile for data DF
-    parser.add_argument('-c', '--columnMatch',
-                        dest   = 'columnMatch', nargs = '+', type = str,
+    parser.add_argument('-cr', '--columns_range',
+                        dest   = 'columns_range', nargs = 2, type = int,
                         action = 'store', default = [],
-                        help = 'Data column names partial match')
+                        help = 'Data column index range [start,stop] 0-offset')
 
     parser.add_argument('-i', '--i_columns',
                         dest   = 'i_columns', nargs = '+', type = int,
                         action = 'store', default = [],
                         help = 'Data column indices. 0-offset')
 
-    parser.add_argument('-cr', '--columns_range',
-                        dest   = 'columns_range', nargs = 2, type = int,
+    parser.add_argument('-c', '--columnMatch',
+                        dest   = 'columnMatch', nargs = '+', type = str,
                         action = 'store', default = [],
-                        help = 'Data column index range [start,stop] 0-offset')
+                        help = 'Data column names partial match')
 
     parser.add_argument('-rc', '--removeColumns', nargs = '*',
                         dest    = 'removeColumns', type = str, 
@@ -478,31 +545,20 @@ def ParseCmdLine( args = argv ):
                         action  = 'store', default = [],
                         help    = 'Initial .npy column names.')
 
-    # mde_columns are the columns used to predict predictVar with Simplex/MDE
-    parser.add_argument('-m', '--mde_columns',
-                        dest   = 'mde_columns', nargs = '+', type = str, 
-                        action = 'store', default = None,
-                        help = 'MDE data column labels')
-
     parser.add_argument('-r', '--predictVar',
                         dest   = 'predictVar', type = str,
                         action = 'store', default = None,
                         help = 'Variable to predict')
-
-    parser.add_argument('-p', '--prediction',
-                        dest   = 'prediction', nargs = '+', type = int,
-                        action = 'store', default = [],
-                        help = 'Data prediction indices. 1-offset')
 
     parser.add_argument('-l', '--library',
                         dest   = 'library', nargs = '+', type = int,
                         action = 'store', default = [],
                         help = 'Data library indices. 1-offset')
 
-    parser.add_argument('-tau', '--tau',
-                        dest   = 'tau', type = int,
-                        action = 'store', default = -1,
-                        help = 'tau')
+    parser.add_argument('-p', '--prediction',
+                        dest   = 'prediction', nargs = '+', type = int,
+                        action = 'store', default = [],
+                        help = 'Data prediction indices. 1-offset')
 
     parser.add_argument('-T', '--Tp',
                         dest   = 'Tp', type = int,
@@ -518,6 +574,26 @@ def ParseCmdLine( args = argv ):
                         dest   = 'dmap_k', type = int,
                         action = 'store', default = 5,
                         help = 'Diffusion map kernel knn')
+
+    parser.add_argument('-eps', '--dmap_epsilon',
+                        dest   = 'dmap_epsilon', type = str,
+                        action = 'store', default = 'bgh',
+                        help = 'Diffusion map epsilon. Can be scalar')
+
+    parser.add_argument('-a', '--dmap_alpha',
+                        dest   = 'dmap_alpha', type = float,
+                        action = 'store', default = 0.5,
+                        help = 'Diffusion map alpha (normalization exponent)' )
+
+    parser.add_argument('-rho', '--plotRho',
+                        dest   = 'plotRho',
+                        action = 'store_true', default = False,
+                        help = 'Annotate rho instead of CAE')
+
+    parser.add_argument('-mm', '--minMax',
+                        dest   = 'minMax',
+                        action = 'store_true', default = False,
+                        help = 'Apply min max scaler')
 
     parser.add_argument('-P', '--plot',
                         dest   = 'plot',
@@ -546,6 +622,16 @@ def ParseCmdLine( args = argv ):
 
     args = parser.parse_args()
 
+    # diffusion map epsilon can be: (string or scalar, optional)
+    # – Method for choosing the epsilon. Currently, the only options
+    # are to provide a scalar (epsilon is set to the provided scalar)
+    # ‘bgh’ (Berry, Giannakis and Harlim), and ‘bgh_generous’
+    # (‘bgh’ method, with answer multiplied by 2.
+    if 'bgh' not in args.dmap_epsilon and \
+       'bgh_generous' not in args.dmap_epsilon :
+        args.dmap_epsilon = float( args.dmap_epsilon )
+        print( f'dmap_epsilon set to {args.dmap_epsilon}' )
+
     # zero offset
     # args.library    = [ x - 1 for x in args.library    ]
     # args.prediction = [ x - 1 for x in args.prediction ]
@@ -556,26 +642,32 @@ def ParseCmdLine( args = argv ):
 def EvaluateCLI():
     '''CLI wrapper.'''
     args = ParseCmdLine()
-    Eval = Evaluate( dataFrame     = None,
-                     dataFile      = args.dataFile,
-                     outFile       = args.outFile,
-                     columnMatch   = args.columnMatch,
-                     i_columns     = args.i_columns,
-                     columns_range = args.columns_range,
-                     mde_columns   = args.mde_columns,
-                     predictVar    = args.predictVar,
-                     library       = args.library,
-                     prediction    = args.prediction,
-                     tau           = args.tau,
-                     Tp            = args.Tp,
-                     components    = args.components,
-                     dmap_k        = args.dmap_k,
-                     plot          = args.plot,
-                     maxN          = args.maxN,
-                     figsize       = args.figsize,
-                     xlim          = args.xlim,
-                     verbose       = args.verbose,
-                     args          = args )
+    Eval = Evaluate( dataFrame       = None,
+                     dataFile        = args.dataFile,
+                     outFile         = args.outFile,
+                     mde_columns     = args.mde_columns,
+                     columns_range   = args.columns_range,
+                     i_columns       = args.i_columns,
+                     columnMatch     = args.columnMatch,
+                     removeColumns   = args.removeColumns,
+                     removeTime      = args.removeTime,
+                     initDataColumns = args.initDataColumns,
+                     predictVar      = args.predictVar,
+                     library         = args.library,
+                     prediction      = args.prediction,
+                     Tp              = args.Tp,
+                     components      = args.components,
+                     dmap_k          = args.dmap_k,
+                     dmap_epsilon    = args.dmap_epsilon,
+                     dmap_alpha      = args.dmap_alpha,
+                     plot            = args.plot,
+                     plotRho         = args.plotRho,
+                     minMax          = args.minMax,
+                     maxN            = args.maxN,
+                     figsize         = args.figsize,
+                     xlim            = args.xlim,
+                     verbose         = args.verbose,
+                     args            = args )
     Eval.Run()
     if args.plot :
         Eval.Plot()

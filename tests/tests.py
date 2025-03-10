@@ -56,9 +56,9 @@ class test_MDE( unittest.TestCase ):
     #------------------------------------------------------------
     # MDE class API
     #------------------------------------------------------------
-    def test_API_1( self ):
+    def test_MDE_API_1( self ):
         '''MDE class API 1'''
-        if self.verbose : print ( " --- API 1 ---" )
+        if self.verbose : print ( " --- MDE API 1 ---" )
 
         from MDE import MDE
 
@@ -71,6 +71,26 @@ class test_MDE( unittest.TestCase ):
 
         self.assertTrue( 'variables' in mde.MDEOut.columns )
         self.assertTrue( 'rho'       in mde.MDEOut.columns )
+
+    #------------------------------------------------------------
+    # Evaluate class API
+    #------------------------------------------------------------
+    def test_API_2( self ):
+        '''Evaluate class API 1'''
+        if self.verbose : print ( " --- Evaluate API 1 ---" )
+
+        from Evaluate import Evaluate
+
+        df = read_csv( '../data/Fly80XY_norm_1061.csv' )
+
+        ev = Evaluate( df, mde_columns = ['TS33','TS4','TS8','TS9','TS32'],
+                       columns_range = [1,81], predictVar = 'FWD',
+                       library = [1,300], prediction = [301,600], Tp = 1,
+                       components = 5, dmap_k = 40 )
+        ev.Run()
+
+        self.assertTrue( 'Predictions' in ev.mde.columns )
+        self.assertTrue( ev.mde.shape == (301,4) )
 
 #------------------------------------------------------------
 #
