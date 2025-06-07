@@ -18,6 +18,11 @@ from CLI_Parser import ParseCmdLine
 # docs.python.org/3/library/multiprocessing.html#contexts-and-start-methods
 warnings.filterwarnings( "ignore", category = DeprecationWarning )
 
+# Ignore RuntimeWarning : Likely in pyEDM ComputeError 
+#   lib/python3.13/site-packages/numpy/lib/_function_base_impl.py:3000:
+#   RuntimeWarning: invalid value encountered in divide  c /= stddev[None, :]
+warnings.filterwarnings( "ignore", category = RuntimeWarning )
+
 #-----------------------------------------------------------------------
 class MDE:
     '''Class for Manifold Dimensional Expansion

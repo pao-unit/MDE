@@ -140,6 +140,12 @@ def ParseCmdLine():
                         default = 0.002,
                         help    = 'CCM slope threshold.')
 
+    parser.add_argument('-seed', '--ccmSeed',
+                        dest    = 'ccmSeed', type = int,
+                        action  = 'store',
+                        default = None,
+                        help    = 'CCM seed.')
+
     parser.add_argument('-E', '--E',
                         dest    = 'E', type = int,
                         action  = 'store',

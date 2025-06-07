@@ -163,7 +163,7 @@ def Run( self ):
                              Tp              = a.Tp,
                              tau             = a.tau,
                              exclusionRadius = a.exclusionRadius,
-                             seed            = None,
+                             seed            = a.ccmSeed,
                              noTime          = a.noTime )
 
                 if a.debug:
