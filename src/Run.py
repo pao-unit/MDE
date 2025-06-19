@@ -27,7 +27,7 @@ def Run( self ):
                       for p in a.pLibSizes ]
     # libSizes ndarray for CCM convergence slope esimate
     self.libSizesVec = array( self.libSizes, dtype = float ).reshape(-1, 1)
-    # normalize [0,1]
+    # normalize libSizesVec to [0,1] for equitable CCM slope comparison
     self.libSizesVec = self.libSizesVec / self.libSizesVec[ -1 ]
 
     if a.debug :
@@ -71,6 +71,22 @@ def Run( self ):
         # L_rhoD is ranked list of tuples : (rho, [columns])
         L_rhoD = sorted( rhoD.values(), key = lambda x:x[0], reverse = True )
 
+        # Discard L_rhoD elements below a.crossMapRhoMin
+        rhoD_ = array( [ _[0] for _ in L_rhoD ] )
+        rhoD_crossMapRhoMin = rhoD_ > a.crossMapRhoMin # boolean array
+        rhoD_N = len( rhoD_[ rhoD_crossMapRhoMin ] )   # number of [] > RhoMin
+
+        if rhoD_N < 1 :
+            # Failed to pass crossMapRhoMin criteria
+            LogMsg( f'{d}-D failed to find valid cross map.' )
+            continue
+
+        elif rhoD_N < len( L_rhoD ) :
+            L_rhoD = L_rhoD[:rhoD_N] # truncate L_rhoD
+
+        # Add this L_rhoD to rhoD
+        self.rhoD[ d ] = L_rhoD
+
         if a.debug:
             LogMsg( f'   CrossMapColumns <- {datetime.now()}' )
             LogMsg( f'      L_rhoD[:3] {L_rhoD[:3]}' )
@@ -92,11 +108,16 @@ def Run( self ):
                 columns_i = L_rhoD[col_i][1] # List of columns
                 newColumn = columns_i[ 0 ]   # First item is new column
 
+                #--------------------------------------------------------
                 # First need CCM embedding dimension
+                #   If args.E provided use it for CCM with the maxRhoEDim
+                #   threshold criteria from CrossMapColumns rho
+                #   If args.E not provided: use EmbedDimension() to find
+                #   EDim and maxRhoEDim
                 if a.E > 0:
                     # Takens embedding dimension specified in args
-                    maxRhoEDim = L_rhoD[col_i][0].round(4)
                     maxEDim    = a.E
+                    maxRhoEDim = L_rhoD[col_i][0].round(4) # CrossMapColumns rho
                 else :
                     # Estimate E as local or global maximum EmbedDimension()
                     if a.debug :
@@ -141,11 +162,13 @@ def Run( self ):
                     LogMsg(f'      EDim {columns_i[0]} ' +\
                            f'E {maxEDim} rho {maxRhoEDim}')
 
-                # Qualify embedding with embedDimRhoMin
+                # Qualify embedding/EDim with maxRhoEDim threshold
                 if maxRhoEDim < a.embedDimRhoMin :
                     continue # Keep looking
 
                 self.EDim[ f'{newColumn}:{a.target}' ] = maxEDim
+                # Finished looking for maxEDim
+                #--------------------------------------------------------
 
                 #-------------------------------------------------------------
                 # CCM

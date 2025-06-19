@@ -4,6 +4,7 @@ from os.path  import exists
 from datetime import datetime
 from pickle   import dump
 from math     import nan
+import gzip
 import warnings
 
 # Community modules
@@ -36,25 +37,51 @@ class MDE:
     from Run import Run
 
     #-------------------------------------------------------------------
-    def __init__( self, dataFrame = None, dataFile = None,
-                  dataName = None, removeTime = False, noTime = False,
-                  columnNames = [], initDataColumns = [], removeColumns = [],
-                  D = 3, target = None, lib = [], pred = [],
-                  Tp = 1, tau = -1, exclusionRadius = 0,
-                  sample = 20, pLibSizes = [10, 15, 85, 90],
-                  noCCM = False, ccmSlope = 0.01,
-                  E = 0, embedDimRhoMin = 0.5, firstEMax = False,
-                  outDir = None, outFile = None, outCSV = None,
-                  logFile = None, cores = 5, consoleOut = True,
-                  verbose = False, debug = False,
-                  plot = False, title = None, args = None ):
+    def __init__( self,
+                  dataFrame       = None,
+                  dataFile        = None,
+                  dataName        = None,   # dataName in npz archive
+                  removeTime      = False,
+                  noTime          = False,
+                  columnNames     = [],     # partial match columnNames
+                  initDataColumns = [],     # .npy .npz : see ReadData()
+                  removeColumns   = [],     # remove time, target etc...
+                  D               = 3,      # MDE max dimension
+                  target          = None,
+                  lib             = [],
+                  pred            = [],
+                  Tp              = 1,
+                  tau             = -1,
+                  exclusionRadius = 0,
+                  sample          = 20,
+                  pLibSizes       = [10, 15, 85, 90],
+                  noCCM           = False,
+                  ccmSlope        = 0.01,   # CCM convergence criteria
+                  ccmSeed         = None,
+                  E               = 0,      # Static E for all CCM
+                  crossMapRhoMin  = 0.5,    # threshold for L_rhoD in Run()
+                  embedDimRhoMin  = 0.5,    # maxRhoEDim threshold in Run()
+                  maxE            = 15,
+                  firstEMax       = False,
+                  timeDelay       = 0,      # Number of time delays to add
+                  cores           = 5,
+                  outDir          = None,
+                  outFile         = None,
+                  outCSV          = None,
+                  logFile         = None,
+                  consoleOut      = True,   # LogMsg() print() to console
+                  verbose         = False,
+                  debug           = False,
+                  plot            = False,
+                  title           = None,
+                  args            = None ):
 
         '''Constructor
 
            If dataFrame is None LoadData() / ReadData() called at end
            of constructor.
         '''
-        
+
         if args is None:
             args = ParseCmdLine() # set default args
             # Insert constructor arguments into args
@@ -76,14 +103,18 @@ class MDE:
             args.pLibSizes       = pLibSizes
             args.noCCM           = noCCM
             args.ccmSlope        = ccmSlope
+            args.ccmSeed         = ccmSeed
             args.E               = E
+            args.crossMapRhoMin  = crossMapRhoMin
             args.embedDimRhoMin  = embedDimRhoMin
+            args.maxE            = maxE
             args.firstEMax       = firstEMax
+            args.timeDelay       = timeDelay
+            args.cores           = cores
             args.outDir          = outDir
             args.outFile         = outFile
             args.outCSV          = outCSV
             args.logFile         = logFile
-            args.cores           = cores
             args.consoleOut      = consoleOut
             args.plot            = plot
             args.verbose         = verbose
@@ -96,13 +127,21 @@ class MDE:
         self.dataFrame   = dataFrame
         self.target_i    = None
         self.libSizes    = None
-        self.libSizesVec = None
+        self.libSizesVe  = None
         self.MDErho      = array( [], dtype = float )
         self.MDEcolumns  = []
         self.MDEOut      = None   # DataFrame : { rho, columns }
         self.EDim        = dict() # Map of [column:target] : E
+        self.rhoD        = dict() # Map of dimension : [L_rhoD]
         self.startTime   = None
         self.elapsedTime = None
+
+        self.__version__     = '1.0.1'
+        self.__versionDate__ = '2025-06-19'
+
+        # These should be options, but hardcoded for now
+        self.maxOutFileDFcolumns = 50  # Limit on dataFrame columns Output()
+        self.maxRhoDlength       = 500 # Limit on number of rhoD Output()
 
         if self.dataFrame is None and self.args.dataFile is None :
             msg = f'MDE() dataFrame or dataFile required.'
@@ -118,8 +157,9 @@ class MDE:
         self.CreateOutDir()
 
         if self.args.verbose :
-            msg = f'\nManifold Dimensional Expansion >------\n' +\
-                f'  {datetime.now()}\n--------------------------------------\n'
+            msg = f'\nManifold Dimensional Expansion {self.__version__} ' +\
+                f'>------\n  {datetime.now()}' +\
+                '\n--------------------------------------------\n'
             self.LogMsg( msg )
 
         if self.dataFrame is None :
@@ -165,7 +205,7 @@ class MDE:
 
     #--------------------------------------------------------------
     def ReadData( self ) :
-        '''Read data from .npy .npz or .csv
+        '''Read data from .npy .npz .feather or .csv
         If dataFile csv     : return DataFrame
         If dataFile npy npz : return DataFrame with columns [c0, c1, c2, ...]
                               First n column names can be specified with
@@ -267,16 +307,42 @@ class MDE:
     #----------------------------------------------------------
     def Output( self ):
         '''MDE output:
-           MDEOut .csv
-           pickle dump of MDE class object'''
+             MDEOut DataFrame to args.outCSV
+             MDE class object to args.outFile as .pkl or .pkl.gz'''
         if self.args.outCSV :
             outFile = f'{self.args.outDir}/{self.args.outCSV}'
             self.MDEOut.to_csv( outFile, index = False )
 
         if self.args.outFile :
+            resetDataFrame = False
+            # If self.dataFrame is Huge, limit to something manageable
+            # then reset to empty in case Run() is called after this
+            if self.dataFrame.shape[1] > self.maxOutFileDFcolumns :
+                self.dataFrame = self.dataFrame.iloc[:,:self.maxOutFileDFcolumns]
+                resetDataFrame = True
+
+            # If number of items in rhoD exceed self.maxRhoDlength, limit
+            for i in range( 1, len( self.rhoD ) + 1 ):
+                if len( self.rhoD[i] ) > self.maxRhoDlength :
+                    self.rhoD[i] = self.rhoD[i][:self.maxRhoDlength]
+
+            # .pkl or .pkl.gz supported
             outFile = f'{self.args.outDir}/{self.args.outFile}'
-            with open( outFile, 'wb' ) as f :
-                dump( self, f )
+
+            if '.pkl.gz' in outFile[-7:] :
+                with gzip.open( outFile, 'wb' ) as f:
+                    dump( self, f )
+            else :
+                if '.pkl' not in outFile[-4:] :
+                    outFile = outFile + '.pkl'
+                    msg = f'Output() MDE pickle dump to {outFile}'
+                    LogMsg( msg )
+
+                with open( outFile, 'wb' ) as f :
+                    dump( self, f )
+
+            if resetDataFrame :
+                self.dataFrame = DataFrame() # JP Klunky, but effective
 
     #----------------------------------------------------------
     def Plot( self ):

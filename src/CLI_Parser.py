@@ -14,11 +14,11 @@ def ParseCmdLine():
                         default = None,
                         help    = 'Input data file.')
 
-    parser.add_argument('-rc', '--removeColumns', nargs = '*',
-                        dest    = 'removeColumns', type = str,
+    parser.add_argument('-dN', '--dataName',
+                        dest    = 'dataName', type = str,
                         action  = 'store',
-                        default = [],
-                        help    = 'data columns to remove.')
+                        default = None,
+                        help    = 'Input .npz data name.')
 
     parser.add_argument('-rT', '--removeTime',
                         dest    = 'removeTime',
@@ -32,12 +32,6 @@ def ParseCmdLine():
                         default = False,
                         help    = 'noTime.')
 
-    parser.add_argument('-dN', '--dataName',
-                        dest    = 'dataName', type = str,
-                        action  = 'store',
-                        default = None,
-                        help    = 'Input .npz data name.')
-
     parser.add_argument('-cn', '--columnNames', nargs = '*',
                         dest    = 'columnNames', type = str,
                         action  = 'store',
@@ -50,47 +44,17 @@ def ParseCmdLine():
                         default = [],
                         help    = 'Initial .npy / npz column names.')
 
-    parser.add_argument('-od', '--outDir',
-                        dest    = 'outDir', type = str,
+    parser.add_argument('-rc', '--removeColumns', nargs = '*',
+                        dest    = 'removeColumns', type = str,
                         action  = 'store',
-                        default = None,  # if None set to ./ in MDE constructor
-                        help    = 'Output directory.')
-
-    parser.add_argument('-o', '--outFile',
-                        dest    = 'outFile', type = str,
-                        action  = 'store',
-                        default = None,
-                        help    = 'Output MDE class pickle file.')
-
-    parser.add_argument('-oc', '--outCSV',
-                        dest    = 'outCSV', type = str,
-                        action  = 'store',
-                        default = None,
-                        help    = 'Output csv file.')
-
-    parser.add_argument('-lf', '--logFile',
-                        dest    = 'logFile', type = str,
-                        action  = 'store',
-                        default = None,
-                        help    = 'Output log file.')
+                        default = [],
+                        help    = 'data columns to remove.')
 
     parser.add_argument('-D', '--D',
                         dest    = 'D', type = int,
                         action  = 'store',
                         default = 3,
                         help    = 'MDE maximum dimension.')
-
-    parser.add_argument('-T', '--Tp',
-                        dest    = 'Tp', type = int,
-                        action  = 'store',
-                        default = 1,
-                        help    = 'Tp.')
-
-    parser.add_argument('-tau', '--tau',
-                        dest    = 'tau', type = int,
-                        action  = 'store',
-                        default = -1,
-                        help    = 'tau.')
 
     parser.add_argument('-t', '--target',
                         dest    = 'target', type = str,
@@ -109,6 +73,18 @@ def ParseCmdLine():
                         action  = 'store',
                         default = [],
                         help    = 'prediction indices.')
+
+    parser.add_argument('-T', '--Tp',
+                        dest    = 'Tp', type = int,
+                        action  = 'store',
+                        default = 1,
+                        help    = 'Tp.')
+
+    parser.add_argument('-tau', '--tau',
+                        dest    = 'tau', type = int,
+                        action  = 'store',
+                        default = -1,
+                        help    = 'tau.')
 
     parser.add_argument('-xr', '--exclusionRadius',
                         dest    = 'exclusionRadius', type = int,
@@ -152,6 +128,12 @@ def ParseCmdLine():
                         default = 0,
                         help    = 'Takens embedding dimension.')
 
+    parser.add_argument('-cmin', '--crossMapRhoMin',
+                        dest    = 'crossMapRhoMin', type = float,
+                        action  = 'store',
+                        default = 0.5,
+                        help    = 'crossMapRhoMin threshold.')
+
     parser.add_argument('-emin', '--embedDimRhoMin',
                         dest    = 'embedDimRhoMin', type = float,
                         action  = 'store',
@@ -181,6 +163,30 @@ def ParseCmdLine():
                         action  = 'store',
                         default = 5,
                         help    = 'CrossMapColumns cores.')
+
+    parser.add_argument('-od', '--outDir',
+                        dest    = 'outDir', type = str,
+                        action  = 'store',
+                        default = None,  # if None set to ./ in MDE constructor
+                        help    = 'Output directory.')
+
+    parser.add_argument('-o', '--outFile',
+                        dest    = 'outFile', type = str,
+                        action  = 'store',
+                        default = None,
+                        help    = 'Output MDE class pickle file.')
+
+    parser.add_argument('-oc', '--outCSV',
+                        dest    = 'outCSV', type = str,
+                        action  = 'store',
+                        default = None,
+                        help    = 'Output csv file.')
+
+    parser.add_argument('-lf', '--logFile',
+                        dest    = 'logFile', type = str,
+                        action  = 'store',
+                        default = None,
+                        help    = 'Output log file.')
 
     parser.add_argument('-n', '--noConsoleOut',
                         dest    = 'consoleOut',

@@ -1,9 +1,11 @@
 # Python distribution modules
+from os import remove
 import sys
 import unittest
+from pickle import load
 
 # Community modules
-from pandas import read_csv
+from pandas import read_csv, DataFrame
 
 # Monkey patch sys.path for MDE app
 if not '../src' in sys.path :
@@ -35,26 +37,14 @@ class test_MDE( unittest.TestCase ):
     def tearDown( self ):
         '''
         '''
-        pass
+        try:
+            remove( 'MDE_API_2.csv' )
+            remove( 'MDE_API_2.pkl' )
+        except :
+            pass
 
     #------------------------------------------------------------
-    # 
-    #------------------------------------------------------------
-    def GetValidFiles( self ):
-        '''Create dictionary of DataFrame values from file name keys'''
-        self.ValidFiles = {}
-
-        validFiles = [ '1_valid.csv',
-                       '2_valid.csv',
-                       '3_valid.csv' ]
-
-        # Create map of module validFiles pathnames in validFiles
-        for file in validFiles:
-            filename = "validation/" + file
-            self.ValidFiles[ file ] = read_csv( filename )
-
-    #------------------------------------------------------------
-    # MDE class API
+    # MDE class API 1
     #------------------------------------------------------------
     def test_MDE_API_1( self ):
         '''MDE class API 1'''
@@ -64,18 +54,47 @@ class test_MDE( unittest.TestCase ):
 
         df = read_csv( '../data/Fly80XY_norm_1061.csv' )
 
-        mde = MDE( df, target = 'FWD', 
+        mde = MDE( df, target = 'FWD',
                    removeColumns = ['index','FWD','Left_Right'],
                    D = 5, lib = [1,300], pred = [301,600] )
         mde.Run()
 
+        self.assertTrue( isinstance( mde.MDEOut, DataFrame ) )
         self.assertTrue( 'variables' in mde.MDEOut.columns )
         self.assertTrue( 'rho'       in mde.MDEOut.columns )
 
     #------------------------------------------------------------
+    # MDE class API 2
+    #------------------------------------------------------------
+    def test_MDE_API_2( self ):
+        '''MDE class API 2'''
+        if self.verbose : print ( " --- MDE API 2 ---" )
+
+        from MDE import MDE
+
+        df = read_csv( '../data/Fly80XY_norm_1061.csv' )
+
+        mde = MDE( df, target = 'FWD',
+                   removeColumns = ['index','FWD','Left_Right'],
+                   D = 5, lib = [1,300], pred = [301,600],
+                   embedDimRhoMin = 0.4, ccmSlope = 0.01, ccmSeed = 7777,
+                   outCSV = 'MDE_API_2.csv', outFile = 'MDE_API_2.pkl' )
+        mde.Run()
+
+        # Validate outCSV equals MDEOut
+        mdeOut_ = read_csv( 'MDE_API_2.csv' )
+        self.assertTrue( mde.MDEOut.equals( mdeOut_ ) )
+
+        # Validate the MDE pickle file
+        with open('MDE_API_2.pkl','rb') as f:
+            mde_ = load(f)
+
+        self.assertTrue( mde.MDEOut.equals( mde_.MDEOut ) )
+
+    #------------------------------------------------------------
     # Evaluate class API
     #------------------------------------------------------------
-    def test_API_2( self ):
+    def test_Evaluate_API_1( self ):
         '''Evaluate class API 1'''
         if self.verbose : print ( " --- Evaluate API 1 ---" )
 
@@ -89,6 +108,7 @@ class test_MDE( unittest.TestCase ):
                        components = 5, dmap_k = 40 )
         ev.Run()
 
+        self.assertTrue( isinstance( ev.mde, DataFrame ) )
         self.assertTrue( 'Predictions' in ev.mde.columns )
         self.assertTrue( ev.mde.shape == (301,4) )
 
