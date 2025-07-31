@@ -136,8 +136,8 @@ class MDE:
         self.startTime   = None
         self.elapsedTime = None
 
-        self.__version__     = '1.0.1'
-        self.__versionDate__ = '2025-06-19'
+        self.__version__     = '1.0.2'
+        self.__versionDate__ = '2025-07-31'
 
         # These should be options, but hardcoded for now
         self.maxOutFileDFcolumns = 50  # Limit on dataFrame columns Output()

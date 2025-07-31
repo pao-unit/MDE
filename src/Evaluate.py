@@ -46,6 +46,9 @@ class Evaluate:
        -r --predictVar  : target variable
        -m --mde_columns : MDE columns
 
+       -E --E           : MDE E if adding time delays
+       -t --tau         : MDE tau if adding time delays
+
        -n --components  : number of PCA, Diffusion Map components
 
        -mm --minMax     : apply min/max scaler to data and predict plot
@@ -64,7 +67,7 @@ class Evaluate:
                   mde_columns = [],  columns_range = [], i_columns = [],
                   columnMatch = [], removeColumns = [], removeTime = False,
                   initDataColumns = [], predictVar = None, library = [],
-                  prediction = [], Tp = 0, components = 3,
+                  prediction = [], E = 0, tau = -1, Tp = 0, components = 3,
                   dmap_k = 5, dmap_epsilon = 'bgh', dmap_alpha = 0.5,
                   plot = False, plotRho = False, minMax = False,
                   maxN = 7, figsize = (8,8), xlim = None, verbose = False,
@@ -88,6 +91,8 @@ class Evaluate:
             args.predictVar      = predictVar
             args.library         = library
             args.prediction      = prediction
+            args.E               = E
+            args.tau             = tau
             args.Tp              = Tp
             args.components      = components
             args.dmap_k          = dmap_k
@@ -103,6 +108,7 @@ class Evaluate:
 
         # Class members
         self.args            = args
+        self.embedded        = True
         self.dataFrame       = dataFrame  # entire dataFrame
         self.data            = None       # data for PCA, DMap
         self.data_lib        = None
@@ -145,6 +151,11 @@ class Evaluate:
         # Initialization
         if self.dataFrame is None :
             self.ReadData() # Load dataFile into self.dataFrame
+
+        # If E > 0 set embedded = False : Adds E time delays
+        if E > 0:
+            self.embedded = False
+            print( 'MDE.__init__() : E > 0 set embedded = False' )
 
         self.FilterData() # Subset dataFrame into data for PCA, DMap
 
@@ -224,9 +235,11 @@ class Evaluate:
 
         # MDE --------------------------------------------------------------
         self.mde = Simplex( dataFrame = df,
-                            target = args.predictVar, columns = args.mde_columns,
+                            target = args.predictVar,
+                            columns = args.mde_columns,
                             lib = args.library, pred = args.prediction,
-                            Tp = args.Tp, embedded = True, showPlot = False )
+                            E = args.E, tau = args.tau, Tp = args.Tp,
+                            embedded = self.embedded, showPlot = False )
 
         self.mdeCAE = round( CAE( self.mde['Observations'],
                                   self.mde['Predictions'] ), 2 )
@@ -325,10 +338,13 @@ class Evaluate:
         lw     = 2.5
         maxN_  = min( args.maxN, args.components )
 
-        x      = arange( 1, self.dataFrame.shape[0] + 1 )
-        x_lib  = [x for x in range(args.library[0],    args.library[1]    + 1)]
-        x_pred = [x for x in range(args.prediction[0], args.prediction[1] + 1)]
-        x_i    = arange( len( x_pred ) )
+        x_pred_mde = x_pred = [x for x in range(args.prediction[0],
+                                                args.prediction[1] + 1)]
+        x_i = arange( len( x_pred ) )
+
+        if args.E > 0 :
+            x_i        = arange( len( x_pred ) - (args.E-1) )
+            x_pred_mde = x_pred[ (args.E-1): ]
 
         # Data & Predictions ------
         if args.plotRho :
@@ -346,7 +362,7 @@ class Evaluate:
         ax.plot( x_pred, scaler( self.predictVar_pred ),
                  label = args.predictVar, color = 'black', lw = lw )
 
-        ax.plot( x_pred, scaler( self.mde.loc[x_i,'Predictions'] ),
+        ax.plot( x_pred_mde, scaler( self.mde.loc[x_i,'Predictions'] ),
                  label = dataLabels['MDE'], lw = lw )
 
         ax.plot( x_pred, scaler( self.dmapLinPred ),
@@ -560,6 +576,16 @@ def ParseCmdLine( args = argv ):
                         action = 'store', default = [],
                         help = 'Data prediction indices. 1-offset')
 
+    parser.add_argument('-E', '--E',
+                        dest   = 'E', type = int,
+                        action = 'store', default = 0,
+                        help = 'E : sets embedded False')
+
+    parser.add_argument('-t', '--tau',
+                        dest   = 'tau', type = int,
+                        action = 'store', default = -1,
+                        help = 'tau')
+
     parser.add_argument('-T', '--Tp',
                         dest   = 'Tp', type = int,
                         action = 'store', default = 0,
@@ -655,6 +681,8 @@ def EvaluateCLI():
                      predictVar      = args.predictVar,
                      library         = args.library,
                      prediction      = args.prediction,
+                     E               = args.E,
+                     tau             = args.tau,
                      Tp              = args.Tp,
                      components      = args.components,
                      dmap_k          = args.dmap_k,
