@@ -359,16 +359,14 @@ class Evaluate:
                           'PCA'   : f'PCA    {self.pcaCAE:.2f}'}
 
         ax = axs[0]
-        ax.plot( x_pred, scaler( self.predictVar_pred ),
-                 label = args.predictVar, color = 'black', lw = lw )
-
-        ax.plot( x_pred_mde, scaler( self.mde.loc[x_i,'Predictions'] ),
-                 label = dataLabels['MDE'], lw = lw )
-
         ax.plot( x_pred, scaler( self.dmapLinPred ),
                  label = dataLabels['D-Map'], lw = lw )
         ax.plot( x_pred, scaler( self.pcaLinPred ),
                  label = dataLabels['PCA'], lw = lw )
+        ax.plot( x_pred_mde, scaler( self.mde.loc[x_i,'Predictions'] ),
+                 label = dataLabels['MDE'], lw = lw )
+        ax.plot( x_pred, scaler( self.predictVar_pred ),
+                 label = args.predictVar, color = 'black', lw = lw )
         ax.legend( title = dataLabels['Type'], bbox_to_anchor = (1., 1),
                    loc = 'upper left' )
 
