@@ -38,38 +38,38 @@ class MDE:
 
     #-------------------------------------------------------------------
     def __init__( self,
-                  dataFrame       = None,
-                  dataFile        = None,
-                  dataName        = None,   # dataName in npz archive
-                  removeTime      = False,
-                  noTime          = False,
-                  columnNames     = [],     # partial match columnNames
-                  initDataColumns = [],     # .npy .npz : see ReadData()
-                  removeColumns   = [],     # remove time, target etc...
-                  D               = 3,      # MDE max dimension
-                  target          = None,
-                  lib             = [],
-                  pred            = [],
-                  Tp              = 1,
-                  tau             = -1,
-                  exclusionRadius = 0,
-                  sample          = 20,
-                  pLibSizes       = [10, 15, 85, 90],
-                  noCCM           = False,
-                  ccmSlope        = 0.01,   # CCM convergence criteria
-                  ccmSeed         = None,
-                  E               = 0,      # Static E for all CCM
-                  crossMapRhoMin  = 0.5,    # threshold for L_rhoD in Run()
-                  embedDimRhoMin  = 0.5,    # maxRhoEDim threshold in Run()
-                  maxE            = 15,
-                  firstEMax       = False,
-                  timeDelay       = 0,      # Number of time delays to add
-                  cores           = 5,
+                  dataFrame       = None,  # pandas DataFrame
+                  dataFile        = None,  # file name for DataFrame
+                  dataName        = None,  # dataName in npz archive
+                  removeTime      = False, # remove dataFrame first column
+                  noTime          = False, # first dataFrame column is data
+                  columnNames     = [],    # partial match columnNames
+                  initDataColumns = [],    # .npy .npz : see ReadData()
+                  removeColumns   = [],    # columns to remove from dataFrame
+                  D               = 3,     # MDE max dimension
+                  target          = None,  # target variable to predictr
+                  lib             = [],    # EDM library start,stop 1-offset
+                  pred            = [],    # EDM prediction start,stop 1-offset
+                  Tp              = 1,     # prediction interval
+                  tau             = -1,    # CCM embedding delay
+                  exclusionRadius = 0,     # exclusion radius: CCM, CrossMap
+                  sample          = 20,    # CCM random sample
+                  pLibSizes       = [10, 15, 85, 90], # CCM libSizes percentiles
+                  noCCM           = False, # Do not validate with CCM
+                  ccmSlope        = 0.01,  # CCM convergence criteria
+                  ccmSeed         = None,  # CCM random seed
+                  E               = 0,     # Static E for all CCM
+                  crossMapRhoMin  = 0.5,   # threshold for L_rhoD in Run()
+                  embedDimRhoMin  = 0.5,   # maxRhoEDim threshold in Run()
+                  maxE            = 15,    # maximum embedding dim for CCM
+                  firstEMax       = False, # use first local peak for E-dim
+                  timeDelay       = 0,     # Number of time delays to add
+                  cores           = 5,     # Number of cores for CrossMapColumns
                   outDir          = None,
                   outFile         = None,
                   outCSV          = None,
                   logFile         = None,
-                  consoleOut      = True,   # LogMsg() print() to console
+                  consoleOut      = True,  # LogMsg() print() to console
                   verbose         = False,
                   debug           = False,
                   plot            = False,
@@ -136,8 +136,8 @@ class MDE:
         self.startTime   = None
         self.elapsedTime = None
 
-        self.__version__     = '1.0.2'
-        self.__versionDate__ = '2025-07-31'
+        self.__version__     = '1.0.3'
+        self.__versionDate__ = '2025-09-15'
 
         # These should be options, but hardcoded for now
         self.maxOutFileDFcolumns = 50  # Limit on dataFrame columns Output()

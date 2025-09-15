@@ -4,3 +4,4 @@ src/*~
 tests/__pycache__
 tests/*.csv
 tests/*.pkl
+example/.ipynb_checkpoints
