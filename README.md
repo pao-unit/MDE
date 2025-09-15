@@ -103,7 +103,7 @@ Fly_LR = MDE( df,
 Fly_LR.Run()
 ```
 
-The FWD behavior suggests a dimension of D=5 observables is and appropriate low-dimensional set of obervables to predict FWD movement. 
+The FWD behavior suggests a dimension of D=5 observables is an appropriate low-dimensional set of obervables to predict FWD movement. 
 ![MDE Fly](/example/MDE_Fly.png)
 
 ---
