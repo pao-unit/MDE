@@ -13,7 +13,7 @@ from numpy      import array, load
 from matplotlib import pyplot as plt
 
 # Local modules
-from CLI_Parser import ParseCmdLine
+from .CLI_Parser import ParseCmdLine
 
 # Ignore DeprecationWarning for multiprocessing start_method fork :
 # docs.python.org/3/library/multiprocessing.html#contexts-and-start-methods
@@ -34,7 +34,7 @@ class MDE:
     '''
 
     # Import class methods
-    from Run import Run
+    from .Run import Run
 
     #-------------------------------------------------------------------
     def __init__( self,

@@ -3,8 +3,8 @@
 # Python distribution modules
 # Community modules
 # Local modules
-from MDE        import MDE as MDE
-from CLI_Parser import ParseCmdLine
+from .MDE        import MDE
+from .CLI_Parser import ParseCmdLine
 
 #----------------------------------------------------------------------------
 def ManifoldDimExpand():

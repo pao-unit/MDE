@@ -9,7 +9,7 @@ from scipy.signal         import argrelextrema
 from sklearn.linear_model import LinearRegression
 
 # Local module from CausalCompression/src
-from CrossMapColumns import CrossMapColumns
+from .CrossMapColumns import CrossMapColumns
 
 #-------------------------------------------------------------------
 #-------------------------------------------------------------------
