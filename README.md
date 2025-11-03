@@ -13,14 +13,14 @@ Output is a DataFrame with a ranked list of observation vectors and predictive s
 ---
 ## Installation
 
-### Python Package mandx
-`python -m pip install mandx`
+### Python Package dimx
+`python -m pip install dimx`
 
 ---
 ## Usage
 MDE is an object-oriented class implementation with command line interface (CLI) support. CLI parameters are configured through command line arguments, MDE class arguments through the constuctor API. 
 
-MDE can be imported as a module and executed with `mandx.Run()` or from the command line with the`ManifoldDimExpand.py` executable as shown below.
+MDE can be imported as a module and executed with `dimx.Run()` or from the command line with the`ManifoldDimExpand.py` executable as shown below.
 
 CLI example:
 ```
@@ -31,7 +31,7 @@ CLI example:
 
 MDE class constructor API example:
 ```python
-from mandx import MDE
+from dimx import MDE
 from pandas import read_csv
 
 df = read_csv( './data/Fly80XY_norm_1061.csv' )
@@ -64,9 +64,9 @@ A fly expressing the calcium indicator GCaMP6f as a measure of neuronal activity
 
 ### Import MDE and Evaluate classes
 ```python
-from mandx import MDE
+from dimx import MDE
 # import Evaluate application. 
-sys.path.append('./mandx/')
+sys.path.append('./dimx/')
 from Evaluate import Evaluate
 ```
 #### Instantiate and Run MDE class objects for FWD & Left_Right targets
