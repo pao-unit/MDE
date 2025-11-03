@@ -7,9 +7,11 @@ from pickle import load
 # Community modules
 from pandas import read_csv, DataFrame
 
-# Monkey patch sys.path for MDE app
-if not '../src' in sys.path :
-    sys.path.insert( 0, '../src' )
+if not "../dimx" in sys.path :
+    sys.path.append( "../dimx" ) # To load Evaluate app
+
+from warnings import filterwarnings # py 3.13 multiprocessing multi-threaded
+filterwarnings( "ignore", category = DeprecationWarning )
 
 #----------------------------------------------------------------
 # Suite of tests
@@ -50,7 +52,7 @@ class test_MDE( unittest.TestCase ):
         '''MDE class API 1'''
         if self.verbose : print ( " --- MDE API 1 ---" )
 
-        from MDE import MDE
+        from dimx import MDE
 
         df = read_csv( '../data/Fly80XY_norm_1061.csv' )
 
@@ -70,7 +72,7 @@ class test_MDE( unittest.TestCase ):
         '''MDE class API 2'''
         if self.verbose : print ( " --- MDE API 2 ---" )
 
-        from MDE import MDE
+        from dimx import MDE
 
         df = read_csv( '../data/Fly80XY_norm_1061.csv' )
 

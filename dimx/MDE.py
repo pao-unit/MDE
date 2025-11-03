@@ -3,9 +3,8 @@ from os       import mkdir
 from os.path  import exists
 from datetime import datetime
 from pickle   import dump
-from math     import nan
+from warnings import filterwarnings
 import gzip
-import warnings
 
 # Community modules
 from pandas     import read_csv, read_feather, DataFrame
@@ -13,28 +12,28 @@ from numpy      import array, load
 from matplotlib import pyplot as plt
 
 # Local modules
-from CLI_Parser import ParseCmdLine
+from .CLI_Parser import ParseCmdLine
 
 # Ignore DeprecationWarning for multiprocessing start_method fork :
 # docs.python.org/3/library/multiprocessing.html#contexts-and-start-methods
-warnings.filterwarnings( "ignore", category = DeprecationWarning )
+filterwarnings( "ignore", category = DeprecationWarning )
 
 # Ignore RuntimeWarning : Likely in pyEDM ComputeError 
 #   lib/python3.13/site-packages/numpy/lib/_function_base_impl.py:3000:
 #   RuntimeWarning: invalid value encountered in divide  c /= stddev[None, :]
-warnings.filterwarnings( "ignore", category = RuntimeWarning )
+filterwarnings( "ignore", category = RuntimeWarning )
 
 #-----------------------------------------------------------------------
 class MDE:
     '''Class for Manifold Dimensional Expansion
        ManifoldDimExpand.py is a CLI to instantiate, configure and Run().
 
-       Uses args object from CLI_Parser.ParseCmdLine to store class
-       arguments/parameters.
+       Uses Namespace object (args) from CLI_Parser.ParseCmdLine to store
+       class arguments/parameters.
     '''
 
     # Import class methods
-    from Run import Run
+    from .Run import Run
 
     #-------------------------------------------------------------------
     def __init__( self,
@@ -47,7 +46,7 @@ class MDE:
                   initDataColumns = [],    # .npy .npz : see ReadData()
                   removeColumns   = [],    # columns to remove from dataFrame
                   D               = 3,     # MDE max dimension
-                  target          = None,  # target variable to predictr
+                  target          = None,  # target variable to predict
                   lib             = [],    # EDM library start,stop 1-offset
                   pred            = [],    # EDM prediction start,stop 1-offset
                   Tp              = 1,     # prediction interval
@@ -65,7 +64,9 @@ class MDE:
                   firstEMax       = False, # use first local peak for E-dim
                   timeDelay       = 0,     # Number of time delays to add
                   cores           = 5,     # Number of cores for CrossMapColumns
-                  outDir          = None,
+                  mpMethod        = None,  # multiprocessing start context
+                  chunksize       = 1,     # multiprocessing chunksize
+                  outDir          = './',  # use pathlib for windog
                   outFile         = None,
                   outCSV          = None,
                   logFile         = None,
@@ -76,14 +77,8 @@ class MDE:
                   title           = None,
                   args            = None ):
 
-        '''Constructor
-
-           If dataFrame is None LoadData() / ReadData() called at end
-           of constructor.
-        '''
-
         if args is None:
-            args = ParseCmdLine() # set default args
+            args = ParseCmdLine( argv = [] ) # get default args
             # Insert constructor arguments into args
             args.dataFile        = dataFile
             args.dataName        = dataName
@@ -111,6 +106,8 @@ class MDE:
             args.firstEMax       = firstEMax
             args.timeDelay       = timeDelay
             args.cores           = cores
+            args.mpMethod        = mpMethod
+            args.chunksize       = chunksize
             args.outDir          = outDir
             args.outFile         = outFile
             args.outCSV          = outCSV
@@ -127,7 +124,7 @@ class MDE:
         self.dataFrame   = dataFrame
         self.target_i    = None
         self.libSizes    = None
-        self.libSizesVe  = None
+        self.libSizesVec = None
         self.MDErho      = array( [], dtype = float )
         self.MDEcolumns  = []
         self.MDEOut      = None   # DataFrame : { rho, columns }
@@ -136,36 +133,18 @@ class MDE:
         self.startTime   = None
         self.elapsedTime = None
 
-        self.__version__     = '1.0.3'
-        self.__versionDate__ = '2025-09-15'
-
         # These should be options, but hardcoded for now
         self.maxOutFileDFcolumns = 50  # Limit on dataFrame columns Output()
         self.maxRhoDlength       = 500 # Limit on number of rhoD Output()
-
-        if self.dataFrame is None and self.args.dataFile is None :
-            msg = f'MDE() dataFrame or dataFile required.'
-            self.LogMsg( msg )
-            raise RuntimeError( msg )
-
-        if self.args.target is None :
-            msg = f'MDE() target required.'
-            self.LogMsg( msg )
-            raise RuntimeError( msg )
 
         # Initialization
         self.CreateOutDir()
 
         if self.args.verbose :
-            msg = f'\nManifold Dimensional Expansion {self.__version__} ' +\
+            msg = f'\nManifold Dimensional Expansion ' +\
                 f'>------\n  {datetime.now()}' +\
                 '\n--------------------------------------------\n'
             self.LogMsg( msg )
-
-        if self.dataFrame is None :
-            self.LoadData()
-
-        self.Validate()
 
     #-------------------------------------------------------------------
     def LoadData( self ):
@@ -269,7 +248,21 @@ class MDE:
 
     #----------------------------------------------------------
     def Validate( self ):
-        '''If lib & pred not specified, set to all rows'''
+        '''Require input data and target.
+        If lib & pred not specified, set to all rows.'''
+        if self.args.target is None :
+            msg = f'Validate() target required.'
+            self.LogMsg( msg )
+            raise RuntimeError( msg )
+
+        if self.dataFrame is None and self.args.dataFile is None :
+            msg = f'Validate() dataFrame or dataFile required.'
+            self.LogMsg( msg )
+            raise RuntimeError( msg )
+
+        if self.dataFrame is None :
+            self.LoadData()
+
         if len( self.args.lib ) == 0 :
             self.args.lib = [ 1, self.dataFrame.shape[0] ]
             msg = f'Validate() set empty lib to  {self.args.lib}'
@@ -283,7 +276,6 @@ class MDE:
     #-----------------------------------------------------------
     def CreateOutDir( self ):
         '''Probe outDir and create if needed'''
-
         outDir = self.args.outDir
         if not outDir :
             self.args.outDir = outDir = './'
@@ -342,7 +334,7 @@ class MDE:
                     dump( self, f )
 
             if resetDataFrame :
-                self.dataFrame = DataFrame() # JP Klunky, but effective
+                self.dataFrame = DataFrame() # Klunky, but effective
 
     #----------------------------------------------------------
     def Plot( self ):
@@ -355,7 +347,7 @@ class MDE:
                      verticalalignment = 'top', wrap = True )
         plt.show()
 
-    #--------------------------------------------------------------------
+    #-----------------------------------------------------------
     def LogMsg( self, msg, end = '\n', mode = 'a' ):
         '''Log msg to stdout and logFile'''
         if self.args.consoleOut :

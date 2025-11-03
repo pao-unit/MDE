@@ -13,14 +13,14 @@ Output is a DataFrame with a ranked list of observation vectors and predictive s
 ---
 ## Installation
 
-### Python Package pyEDM
-MDE is built on [pyEDM](https://pypi.org/project/pyEDM/). PyEDM can be installed via pip: `python -m pip install pyEDM`.
-
-MDE can be imported as a module and executed with `MDE.Run()` as shown below. It can also be run from the command line with the`ManifoldDimExpand.py` executable as shown below.
+### Python Package mandx
+`python -m pip install mandx`
 
 ---
 ## Usage
 MDE is an object-oriented class implementation with command line interface (CLI) support. CLI parameters are configured through command line arguments, MDE class arguments through the constuctor API. 
+
+MDE can be imported as a module and executed with `mandx.Run()` or from the command line with the`ManifoldDimExpand.py` executable as shown below.
 
 CLI example:
 ```
@@ -31,10 +31,10 @@ CLI example:
 
 MDE class constructor API example:
 ```python
-from MDE import MDE
+from mandx import MDE
 from pandas import read_csv
 
-df = read_csv( '../data/Fly80XY_norm_1061.csv' )
+df = read_csv( './data/Fly80XY_norm_1061.csv' )
 
 mde = MDE( df, target = 'FWD', 
            removeColumns = ['index','FWD','Left_Right'], 
@@ -64,8 +64,9 @@ A fly expressing the calcium indicator GCaMP6f as a measure of neuronal activity
 
 ### Import MDE and Evaluate classes
 ```python
-sys.path.append('../src/')
-from MDE import MDE
+from mandx import MDE
+# import Evaluate application. 
+sys.path.append('./mandx/')
 from Evaluate import Evaluate
 ```
 #### Instantiate and Run MDE class objects for FWD & Left_Right targets
@@ -160,6 +161,8 @@ MDE parameters are defined in the MDE constructor.
 | firstEMax | False | CCM embedding dimension is first local peak in rho(E) |
 | timeDelay | 0 | Add N=timeDelay time delays |
 | cores | 5 | number of multiprocessing CPU in CrossMapColumns() |
+| mpMethod | None | multiprocessing context method in CrossMapColumns() |
+| chunksize | 1 | multiprocessing chunksize in CrossMapColumns() |
 | outDir | None | Output file directory |
 | outFile | None | MDE object pickle file |
 | outCSV | None | CSV of MDE output |

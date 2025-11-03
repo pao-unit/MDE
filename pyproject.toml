@@ -1,0 +1,38 @@
+[project]
+name            = "dimx"
+dynamic         = ["version","date"]
+description     = "Manifold Dimensional Expansion"
+readme          = "README.md"
+license         = "LicenseRef-OIST-License"
+license-files   = ["LICENSE"]
+requires-python = ">=3.11"
+dependencies = [
+    "pyEDM>=2.2.3",
+    "matplotlib",
+    "numpy",
+    "pandas>=2.0",
+    "pydiffmap>=0.2.0.1",
+    "scikit-learn",
+    "scipy",
+]
+authors = [
+  { name = "Joseph Park",     email = "JosephPark@IEEE.org"     },
+  { name = "Gerald Pao",      email = "Gerald.Pao@OIST.jp"      },
+  { name = "Temma Fujishige", email = "Temma.Fujishige@OIST.jp" },
+]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Operating System :: OS Independent",
+]
+[project.urls]
+"Homepage"      = "https://github.com/pao-unit/MDE"
+"Documentation" = "https://github.com/pao-unit/MDE/README.md"
+"Issues"        = "https://github.com/pao-unit/MDE/issues"
+[tool.pdm.version]
+source = "file"
+path   = "dimx/__init__.py"
+[tool.pdm.build]
+includes = ["dimx/", "data/", "example/", "tests"]
+[build-system]
+requires      = ["pdm-backend"]
+build-backend = "pdm.backend"
