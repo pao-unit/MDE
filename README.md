@@ -66,8 +66,14 @@ A fly expressing the calcium indicator GCaMP6f as a measure of neuronal activity
 ```python
 from dimx import MDE
 # import Evaluate application. 
+import sys
 sys.path.append('./dimx/')
 from Evaluate import Evaluate
+```
+### Load data
+```python
+from pandas import read_csv
+df = read_csv( './data/Fly80XY_norm_1061.csv' )
 ```
 #### Instantiate and Run MDE class objects for FWD & Left_Right targets
 We use the first 300 time series rows to create the EDM library, and perform out-of-sample prediction on time series rows 301-600. These indices are Not zero offset. 
@@ -85,6 +91,7 @@ Fly_FWD = MDE( df,                     # Pandas DataFrame of observables
                embedDimRhoMin = 0.65,  # Minimum rho for CCM embedding dimension
                crossMapRhoMin = 0.5,   # Minumum rho for cross map of target : variables
                cores = 10,             # Number of cores in CrossMapColumns()
+               chunksize = 30,
                plot = False )
 Fly_FWD.Run()
 ```
@@ -100,6 +107,7 @@ Fly_LR = MDE( df,
               embedDimRhoMin = 0.2,
               crossMapRhoMin = 0.05,
               cores = 10,
+              chunksize = 30,
               plot = False )
 Fly_LR.Run()
 ```
