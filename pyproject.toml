@@ -26,7 +26,7 @@ classifiers = [
 ]
 [project.urls]
 "Homepage"      = "https://github.com/pao-unit/MDE"
-"Documentation" = "https://github.com/pao-unit/MDE/README.md"
+"Documentation" = "https://github.com/pao-unit/MDE"
 "Issues"        = "https://github.com/pao-unit/MDE/issues"
 [tool.pdm.version]
 source = "file"

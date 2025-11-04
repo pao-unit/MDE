@@ -1,24 +1,23 @@
 ## Manifold Dimensional Expansion (MDE)
 ---
-Manifold dimensional expansion is a causal discovery and dimensionality reduction technique designed to identify low dimensional maximally predictive observables of a dynamical system with multivariate observations.
+Manifold dimensional expansion is a causal discovery and dimensionality reduction technique designed to identify low dimensional maximally predictive _observables_ of a dynamical system with multivariate observations.
 
-The algorithm is based on a greedy implementation of the generalized Takens embedding theorem. However, instead of using time delays for dimensionality expansion observables that improve the forecast skill of a target variable are added until no further improvement can be achieved. The default predictor is the [simplex](https://www.nature.com/articles/344734a0) function in [pyEDM](https://pypi.org/project/pyEDM/) providing a fully nonlinear predictor from [Empirical Dynamic Modeling (EDM)](https://en.wikipedia.org/wiki/Empirical_dynamic_modeling). 
+The algorithm is based on a greedy implementation of the generalized Takens embedding theorem. However, instead of using time delays for dimensionality expansion, _observables_ that improve the forecast skill of a target variable are added until no further improvement can be achieved. The default predictor is the [simplex](https://www.nature.com/articles/344734a0) function in [pyEDM](https://pypi.org/project/pyEDM/) providing a fully nonlinear predictor from [Empirical Dynamic Modeling (EDM)](https://en.wikipedia.org/wiki/Empirical_dynamic_modeling). 
 
 Specifically, given a target observable, scan all other observables to find the best 1-D predictor of the target, ensuring the predictor has causal inference with the target. With this 1-D vector scan all remaining observables to find the 2-D embedding with best predictability and causal inference. This greedy algorithm is iterated up to the point that no further prediction skill improvement can be produced. 
 
-Causal inference is performed by default with Convergent Cross Mapping ([CCM](https://science.sciencemag.org/content/338/6106/496)) ensuring the added observable is part of the dynamical system of the interrogated time series. The embedding dimension needed for CCM is automatically determined if parameter `E=0`, the default. Otherwise the value of `E` is used. To account for unobserved variables time delay vectors of the top observables can be added.
+Causal inference is performed by default with Convergent Cross Mapping ([CCM](https://science.sciencemag.org/content/338/6106/496)) ensuring the added observable is part of the dynamical system of the interrogated time series. The embedding dimension needed for CCM is automatically determined if parameter `E=0`, the default. Otherwise the specifed value of `E` is used. To account for unobserved variables time delay vectors of the top observables can be added.
 
 Output is a DataFrame with a ranked list of observation vectors and predictive skill satisfying MDE criteria for the target variable.
 
 ---
 ## Installation
 
-### Python Package dimx
 `python -m pip install dimx`
 
 ---
 ## Usage
-MDE is an object-oriented class implementation with command line interface (CLI) support. CLI parameters are configured through command line arguments, MDE class arguments through the constuctor API. 
+MDE is an object-oriented class implementation with command line interface (CLI) support. CLI parameters are configured through command line arguments, MDE class arguments through the MDE class constuctor.
 
 MDE can be imported as a module and executed with `dimx.Run()` or from the command line with the`ManifoldDimExpand.py` executable as shown below.
 
@@ -128,7 +127,7 @@ Fly_FWD_Eval = Evaluate( df,
 Fly_FWD_Eval.Run()
 Fly_FWD_Eval.Plot()
 ```
-The MDE prediction has the lowest CAE (cumulative absolute error) to the out-of-sample observations. The diffusion map compoents are latent (not observable) and do not correspond in an obvious way to observed neural dynamics. The PCA prediction lumps the majority of the variance into a single component based on a linear decomposition. Both PCA and diffusion map predict activity during times when no FWD movement is observed, while MDE does not. 
+The MDE prediction has the lowest CAE (cumulative absolute error) to the out-of-sample observations. The diffusion map compoents are latent (not observable) and do not correspond in an obvious way to observed neural dynamics. The PCA prediction lumps the majority of the variance into a single component based on a linear decomposition. Both PCA and diffusion map predict activity during times when no FWD movement is observed, while MDE does not. Crucially, MDE predictions are not latent, but actual _observables_ of the system.
 
 ![MDE Evaluate](/example/Evaluate_Fly.png)
 
