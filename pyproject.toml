@@ -1,6 +1,6 @@
 [project]
 name            = "dimx"
-dynamic         = ["version","date"]
+dynamic         = ["version","versionDate"]
 description     = "Manifold Dimensional Expansion"
 readme          = "README.md"
 license         = "LicenseRef-OIST-License"

@@ -38,7 +38,7 @@ df = read_csv( './data/Fly80XY_norm_1061.csv' )
 
 mde = MDE( df, target = 'FWD', 
            removeColumns = ['index','FWD','Left_Right'], 
-           D = 10, lib = [1,300], pred = [301,600], 
+           D = 10, lib = [1,300], pred = [301,600], ccmSeed = 12345,
            cores = 10, plot = True, title = "MDE FWD" )
 
 mde.Run()
@@ -52,23 +52,19 @@ mde.MDEOut
 4      TS44  0.840958
 5      TS37  0.845765
 6       TS9  0.846601
-7      TS22  0.856512
-8      TS67  0.858537
-9      TS13  0.859161
+7      TS30  0.859614
+8      TS47  0.860541
+9      TS67  0.860230
 ```
 ---
 ## Real World Example
 This example finds optimal observables and estimates the dimension of neural data from _Drosophila melanogaster_. 
 
-A fly expressing the calcium indicator GCaMP6f as a measure of neuronal activity was recorded walking on a Styrofoam ball. Neuronal activity across the brain was spatially segmented by independent component analysis (ICA) yielding 80 time series of neural activity from the component brain areas. Two behavioral variables were simultaneously recorded: forward speed (FWD) and left/right turning speed (Left_Right) [Aimon, S. et al. 2019](https://doi.org/10.1371/journal.pbio.2006732). 
+A fly expressing the calcium indicator GCaMP6f as a measure of neuronal activity was recorded walking on a Styrofoam ball. Neuronal activity across the brain was spatially segmented by independent component analysis (ICA) yielding 80 time series of neural activity from the component brain areas. Two behavioral variables were simultaneously recorded: forward speed (FWD) and left/right turning speed (Left_Right) [Aimon, S. et al. 2019](https://doi.org/10.1371/journal.pbio.2006732). A Jupyter Lab notebook is available at [MDE_Fly_Example](https://github.com/pao-unit/MDE/blob/b0eaca5bebc947676498057c679f4d3864909656/example/MDE_Fly_Example.ipynb).
 
 ### Import MDE and Evaluate classes
 ```python
-from dimx import MDE
-# import Evaluate application. 
-import sys
-sys.path.append('./dimx/')
-from Evaluate import Evaluate
+from dimx import MDE, Evaluate
 ```
 ### Load data
 ```python
