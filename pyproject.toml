@@ -25,9 +25,9 @@ classifiers = [
   "Operating System :: OS Independent",
 ]
 [project.urls]
-"Homepage"      = "https://github.com/pao-unit/MDE"
-"Documentation" = "https://github.com/pao-unit/MDE"
-"Issues"        = "https://github.com/pao-unit/MDE/issues"
+Homepage      = "https://github.com/pao-unit/MDE"
+Documentation = "https://pao-unit.github.io/MDE_docs/"
+Issues        = "https://github.com/pao-unit/MDE/issues"
 [tool.pdm.version]
 source = "file"
 path   = "dimx/__init__.py"
