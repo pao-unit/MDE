@@ -5,5 +5,5 @@ from .MDE             import MDE
 from .CrossMapColumns import CrossMapColumns
 from .Evaluate        import Evaluate
 
-__version__ = "1.1.1"
-__date__    = "2025-11-07"
+__version__     = "1.1.1"
+__versionDate__ = "2025-11-07"
