@@ -190,7 +190,7 @@ class MDE:
                               First n column names can be specified with
                               self.args.initColumns
         if dataFile npz     : Select the args.dataName from npz archive
-        if args.removeTime  : drop first column from DataFrame
+        if args.removeTime  : drop first column from DataFrame copy
         '''
 
         if self.args.verbose :
@@ -241,15 +241,12 @@ class MDE:
             msg = f' complete. Shape:{df.shape}'
             self.LogMsg( msg )
 
-        if self.args.removeTime :
-            df = df.drop( columns = df.columns[0] )
-
         return df
 
     #----------------------------------------------------------
     def Validate( self ):
         '''Require input data and target.
-        If lib & pred not specified, set to all rows.'''
+        If lib & pred not specified, set to [1,N/2], [N/2+1,N]'''
         if self.args.target is None :
             msg = f'Validate() target required.'
             self.LogMsg( msg )
@@ -263,13 +260,43 @@ class MDE:
         if self.dataFrame is None :
             self.LoadData()
 
+        if self.args.removeTime :
+            self.dataFrame = \
+                self.dataFrame.copy().drop(columns = self.dataFrame.columns[0])
+
+        if not isinstance( self.args.removeColumns, list ) :
+            msg = f'Validate() removeColumns must be list.'
+            self.LogMsg( msg )
+            raise RuntimeError( msg )
+
+        if not isinstance( self.args.columnNames, list ) :
+            msg = f'Validate() columnNames must be list.'
+            self.LogMsg( msg )
+            raise RuntimeError( msg )
+
+        if not isinstance( self.args.initDataColumns, list ) :
+            msg = f'Validate() initDataColumns must be list.'
+            self.LogMsg( msg )
+            raise RuntimeError( msg )
+
+        if not isinstance( self.args.lib, list ) :
+            msg = f'Validate() lib must be list.'
+            self.LogMsg( msg )
+            raise RuntimeError( msg )
+
+        if not isinstance( self.args.pred, list ) :
+            msg = f'Validate() pred must be list.'
+            self.LogMsg( msg )
+            raise RuntimeError( msg )
+
         if len( self.args.lib ) == 0 :
-            self.args.lib = [ 1, self.dataFrame.shape[0] ]
-            msg = f'Validate() set empty lib to  {self.args.lib}'
+            self.args.lib = [ 1, int( self.dataFrame.shape[0]/2 ) ]
+            msg = f'Validate() set empty lib to {self.args.lib}'
             self.LogMsg( msg )
 
         if len( self.args.pred ) == 0 :
-            self.args.pred = [ 1, self.dataFrame.shape[0] ]
+            self.args.pred = [ int( self.dataFrame.shape[0]/2 ) + 1,
+                               self.dataFrame.shape[0] ]
             msg = f'Validate() set empty pred to {self.args.pred}'
             self.LogMsg( msg )
 
