@@ -284,8 +284,8 @@ def Run( self ):
         msg = f'\nManifold Dimensional Expansion <------\n' +\
               f'  Run() Elapsed time {self.elapsedTime}\n'  +\
               f'  {datetime.now()}\n--------------------------------------'
-        self.LogMsg( msg )
-        self.LogMsg( self.MDEOut.to_string() )
+        LogMsg( msg )
+        LogMsg( self.MDEOut.to_string() )
 
     if a.outFile or a.outCSV :
         self.Output()

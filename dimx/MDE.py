@@ -355,7 +355,7 @@ class MDE:
                 if '.pkl' not in outFile[-4:] :
                     outFile = outFile + '.pkl'
                     msg = f'Output() MDE pickle dump to {outFile}'
-                    LogMsg( msg )
+                    self.LogMsg( msg )
 
                 with open( outFile, 'wb' ) as f :
                     dump( self, f )
