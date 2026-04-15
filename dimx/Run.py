@@ -4,12 +4,13 @@ from datetime import datetime
 # Community modules
 from pandas import DataFrame, concat
 from numpy  import append, array, greater, nan_to_num
-from pyEDM  import ComputeError, Embed, EmbedDimension, CCM, Simplex
+from pyEDM  import ComputeError, Embed, Simplex
 from scipy.signal         import argrelextrema
 from sklearn.linear_model import LinearRegression
 
 # Local module from CausalCompression/src
-from .CrossMapColumns import CrossMapColumns
+from .FastCCM         import ComputeCCMCurves, ComputeCrossMapColumns, \
+                             ComputeEmbedDimension
 
 #-------------------------------------------------------------------
 #-------------------------------------------------------------------
@@ -56,20 +57,14 @@ def Run( self ):
 
         # rhoD is dict of 'columns:target' : (rho, [columns]) pairs.
         # Note embedded = True
-        rhoD = CrossMapColumns( self.dataFrame,
-                                columns         = columns,
-                                target          = a.target, # E = 0,
-                                Tp              = a.Tp,
-                                tau             = a.tau,
-                                exclusionRadius = a.exclusionRadius,
-                                lib             = a.lib,
-                                pred            = a.pred,
-                                embedded        = True,
-                                cores           = a.cores,
-                                mpMethod        = a.mpMethod,
-                                chunksize       = a.chunksize,
-                                noTime          = a.noTime,
-                                verbose         = a.verbose )
+        rhoD = ComputeCrossMapColumns( self.dataFrame,
+                                       columns         = columns,
+                                       target          = a.target,
+                                       Tp              = a.Tp,
+                                       exclusionRadius = a.exclusionRadius,
+                                       lib             = a.lib,
+                                       pred            = a.pred,
+                                       embedded        = True )
 
         # Sort rhoD values by decreasing rho
         # L_rhoD is ranked list of tuples : (rho, [columns])
@@ -106,6 +101,8 @@ def Run( self ):
             #------------------------------------------------------------
             maxCol_i  = None
             newColumn = None
+            ccmColumns = []
+            ccmEDim    = {}
 
             for col_i in range( len( L_rhoD )  ) :
 
@@ -128,23 +125,23 @@ def Run( self ):
                         LogMsg( f'   EmbedDimension -> {datetime.now()}' )
                         LogMsg( f'      L_rhoD[col_i] {columns_i}' )
 
-                    EDimDF = EmbedDimension( dataFrame       = self.dataFrame,
-                                             columns         = newColumn,
-                                             target          = a.target,
-                                             maxE            = a.maxE,
-                                             lib             = a.lib,
-                                             pred            = a.pred,
-                                             Tp              = a.Tp,
-                                             tau             = a.tau,
-                                             exclusionRadius = a.exclusionRadius,
-                                             validLib        = [],
-                                             noTime          = a.noTime,
-                                             verbose         = a.verbose,
-                                             numProcess      = a.maxE,
-                                             showPlot        = False )
+                    EDimDF, EDimBackend = ComputeEmbedDimension(
+                        dataFrame       = self.dataFrame,
+                        columns         = newColumn,
+                        target          = a.target,
+                        maxE            = a.maxE,
+                        lib             = a.lib,
+                        pred            = a.pred,
+                        Tp              = a.Tp,
+                        tau             = a.tau,
+                        exclusionRadius = a.exclusionRadius,
+                        validLib        = [],
+                        noTime          = a.noTime,
+                        verbose         = a.verbose,
+                        showPlot        = False )
 
                     if a.debug :
-                        LogMsg( f'   EmbedDimension <- {datetime.now()}' )
+                        LogMsg( f'   EmbedDimension <- {datetime.now()} [{EDimBackend}]' )
 
                     # If firstEMax True, return first (lowest E) local maximum
                     # Find max E(rho)
@@ -171,50 +168,53 @@ def Run( self ):
                     continue # Keep looking
 
                 self.EDim[ f'{newColumn}:{a.target}' ] = maxEDim
-                # Finished looking for maxEDim
-                #--------------------------------------------------------
-
-                #-------------------------------------------------------------
-                # CCM
-                #-------------------------------------------------------------
-                if a.debug :
-                    LogMsg( f'   CCM -> {datetime.now()}' )
-                    LogMsg( f'      {newColumn}:{a.target}' )
-
-                ccmDF = CCM( dataFrame       = self.dataFrame,
-                             columns         = newColumn,
-                             target          = a.target,
-                             libSizes        = self.libSizes,
-                             sample          = a.sample,
-                             E               = maxEDim,
-                             Tp              = a.Tp,
-                             tau             = a.tau,
-                             exclusionRadius = a.exclusionRadius,
-                             seed            = a.ccmSeed,
-                             noTime          = a.noTime )
-
-                if a.debug:
-                    LogMsg( f'   CCM <- {datetime.now()}' )
-                    LogMsg( ccmDF.to_string() )
-
-                ccmVals = ccmDF[ f'{a.target}:{newColumn}' ].to_numpy()
-
-                # Slope of linear fit to rho(libSizes)
-                lm = LinearRegression().fit( self.libSizesVec,
-                                             nan_to_num( ccmVals ) )
-                slope = round( lm.coef_[0], 5 )
-            
-                if a.debug :
-                    LogMsg( f'   {a.target}:{newColumn} slope {slope}' )
-
-                if slope > a.ccmSlope :
-                    maxCol_i = col_i
-                    break # This vector is good
-                else :
-                    maxCol_i = None
+                ccmColumns.append( newColumn )
+                ccmEDim[ newColumn ] = maxEDim
 
             # <---- for col_i in range( len( L_rhoD )  ) :
             # <-------------------------------------------
+
+            if len( ccmColumns ) :
+                if a.debug :
+                    LogMsg( f'   CCM -> {datetime.now()}' )
+                    LogMsg( f'      {len(ccmColumns)} columns' )
+
+                ccmCurves, ccmBackend = ComputeCCMCurves(
+                    dataFrame       = self.dataFrame,
+                    columns         = ccmColumns,
+                    target          = a.target,
+                    libSizes        = self.libSizes,
+                    sample          = a.sample,
+                    E_by_column     = ccmEDim,
+                    Tp              = a.Tp,
+                    tau             = a.tau,
+                    exclusionRadius = a.exclusionRadius,
+                    seed            = a.ccmSeed,
+                    noTime          = a.noTime )
+
+                if a.debug :
+                    LogMsg( f'   CCM <- {datetime.now()} [{ccmBackend}]' )
+
+                for col_i in range( len( L_rhoD )  ) :
+                    columns_i = L_rhoD[col_i][1]
+                    newColumn = columns_i[0]
+
+                    if not newColumn in ccmCurves :
+                        continue
+
+                    ccmVals = ccmCurves[ newColumn ]
+
+                    # Slope of linear fit to rho(libSizes)
+                    lm = LinearRegression().fit( self.libSizesVec,
+                                                 nan_to_num( ccmVals ) )
+                    slope = round( lm.coef_[0], 5 )
+
+                    if a.debug :
+                        LogMsg( f'   {a.target}:{newColumn} slope {slope}' )
+
+                    if slope > a.ccmSlope :
+                        maxCol_i = col_i
+                        break # This vector is good
 
             if maxCol_i is not None :
                 # Add newColumn to MDEcolumns

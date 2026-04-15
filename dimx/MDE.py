@@ -14,8 +14,6 @@ from matplotlib import pyplot as plt
 # Local modules
 from .CLI_Parser import ParseCmdLine
 
-# Ignore DeprecationWarning for multiprocessing start_method fork :
-# docs.python.org/3/library/multiprocessing.html#contexts-and-start-methods
 filterwarnings( "ignore", category = DeprecationWarning )
 
 # Ignore RuntimeWarning : Likely in pyEDM ComputeError 
@@ -63,9 +61,9 @@ class MDE:
                   maxE            = 15,    # maximum embedding dim for CCM
                   firstEMax       = False, # use first local peak for E-dim
                   timeDelay       = 0,     # Number of time delays to add
-                  cores           = 5,     # Number of cores for CrossMapColumns
-                  mpMethod        = None,  # multiprocessing start context
-                  chunksize       = 1,     # multiprocessing chunksize
+                  cores           = 5,     # Ignored, kept for compatibility
+                  mpMethod        = None,  # Ignored, kept for compatibility
+                  chunksize       = 1,     # Ignored, kept for compatibility
                   outDir          = './',  # use pathlib for windog
                   outFile         = None,
                   outCSV          = None,

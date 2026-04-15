@@ -162,18 +162,18 @@ def ParseCmdLine( argv = None ):
                         dest    = 'cores', type = int,
                         action  = 'store',
                         default = 5,
-                        help    = 'CrossMapColumns cores.')
+                        help    = 'Ignored. Kept for backward compatibility.')
 
     parser.add_argument('-mp', '--mpMethod',
                         dest    = 'mpMethod', type = str,
                         action  = 'store',
                         default = None,
-                        help    = 'Multiprocessing start method')
+                        help    = 'Ignored. Kept for backward compatibility.')
 
     parser.add_argument('-cz', '--chunksize',
                         dest   = 'chunksize', type = int,
                         action = 'store', default = 1,
-                        help = 'ProcessPool chunksize')
+                        help = 'Ignored. Kept for backward compatibility.')
 
     parser.add_argument('-od', '--outDir',
                         dest    = 'outDir', type = str,

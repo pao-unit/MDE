@@ -3,8 +3,6 @@
 # Distribution modules
 import time, argparse
 from   datetime        import datetime
-from   multiprocessing import get_context
-from   itertools       import repeat, starmap
 
 # Community modules
 from pandas import DataFrame, read_csv, concat
@@ -22,7 +20,7 @@ def CrossMapColumns( data, columns = [], target = None, E = 0,
 
     '''Cross map target (-t) to columns (-c). 
        columns can be a list of single columns, or list of multiple columns.
-       If cores > 1 multiprocessing is used with mpMethod and chunksize.
+       Legacy multiprocessing options are ignored.
        Return dict of 'columns:target' : (rho, column) pairs.
     '''
 
@@ -43,22 +41,12 @@ def CrossMapColumns( data, columns = [], target = None, E = 0,
     if not pred :
         pred = [ 1, data.shape[0] ]
 
-    # Dictionary of arguments for starmap : SimplexFunc
+    # Dictionary of arguments for SimplexFunc
     argsD = { 'target' : target, 'lib' : lib, 'pred' : pred, 'E' : E,
               'embedded' : embedded, 'exclusionRadius' : exclusionRadius,
               'Tp' : Tp, 'tau' : tau, 'noTime' : noTime }
 
-    # Create iterable for starmap, use repeated copies of argsD, data
-    poolArgs = zip( columns, repeat( argsD ), repeat( data ) )
-
-    if cores > 1 :
-        # Use pool.starmap to distribute among cores
-        mpContext = get_context( mpMethod )
-        with mpContext.Pool( processes = cores ) as pool :
-            CMList = pool.starmap( SimplexFunc, poolArgs, chunksize = chunksize )
-    else :
-        # No parallelization
-        CMList = [ _ for _ in starmap( SimplexFunc, poolArgs ) ]
+    CMList = [ SimplexFunc( column, argsD, data ) for column in columns ]
 
     # Load CMList results into dictionary
     CrossMap_D = {}
@@ -198,18 +186,18 @@ def ParseCmdLine():
                         dest    = 'cores', type = int, 
                         action  = 'store',
                         default = 5,
-                        help    = 'Multiprocessing cores.')
+                        help    = 'Ignored. Kept for backward compatibility.')
 
     parser.add_argument('-mp', '--mpMethod',
                         dest    = 'mpMethod', type = str,
                         action  = 'store',
                         default = None,
-                        help    = 'Multiprocessing start method')
+                        help    = 'Ignored. Kept for backward compatibility.')
 
     parser.add_argument('-cz', '--chunksize',
                         dest   = 'chunksize', type = int,
                         action = 'store', default = 1,
-                        help = 'ProcessPool chunksize')
+                        help = 'Ignored. Kept for backward compatibility.')
 
     parser.add_argument('-v', '--verbose',
                         dest    = 'verbose',
