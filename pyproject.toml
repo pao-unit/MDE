@@ -7,13 +7,15 @@ license         = "LicenseRef-OIST-License"
 license-files   = ["LICENSE"]
 requires-python = ">=3.11"
 dependencies = [
-    "pyEDM>=2.2.3",
+    "fastccm",
+    "pyEDM>=2.3.2",
     "matplotlib",
     "numpy",
     "pandas>=2.0",
     "pydiffmap>=0.2.0.1",
     "scikit-learn",
     "scipy",
+    "torch",
 ]
 authors = [
   { name = "Joseph Park",     email = "JosephPark@IEEE.org"     },

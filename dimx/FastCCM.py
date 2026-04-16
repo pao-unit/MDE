@@ -21,10 +21,8 @@ def _require_fastccm():
         raise RuntimeError(msg)
 
 
-def _slice_pred_end(pred_end, Tp):
-    if int(Tp) >= 0:
-        return int(pred_end) - int(Tp)
-    return int(pred_end)
+def _as_writable_array(array):
+    return np.array(array, copy=True, order='C')
 
 
 def _fastccm_ccm_curves(dataFrame, columns, target, libSizes, sample,
@@ -37,46 +35,39 @@ def _fastccm_ccm_curves(dataFrame, columns, target, libSizes, sample,
 
     libSizes = [int(libSize) for libSize in libSizes]
     trials   = max(1, int(sample))
-    curves   = {column: np.full(len(libSizes), np.nan, dtype=float)
-                for column in columns}
+    curves   = {}
+    ccm = PairwiseCCM(device='cpu', memory_budget_gb=3)
 
-    target_vec = dataFrame[target].to_numpy()[:, None]
-    unique_E   = sorted({int(E_by_column[column]) for column in columns})
-    E_to_src_i = {E: i for i, E in enumerate(unique_E)}
-    X_emb      = [fastccm_utils.embed(target_vec, E=E, tau=tau_)[0]
-                  for E in unique_E]
-    Y_emb      = [fastccm_utils.embed(
-                     dataFrame[column].to_numpy()[:, None], E=int(E_by_column[column]), tau=tau_
-                  )[0]
-                  for column in columns]
-    nbrs_num   = [E + 1 for E in unique_E]
-    ccm = PairwiseCCM(device='cpu')
+    for column in columns:
+        E_col = int(E_by_column[column])
+        X_emb = [_as_writable_array(
+            fastccm_utils.embed(
+                dataFrame[column].to_numpy()[:, None], E=E_col, tau=tau_
+            )[0]
+        )]
+        Y_emb = [_as_writable_array(
+            fastccm_utils.embed(
+                dataFrame[target].to_numpy()[:, None], E=E_col, tau=tau_
+            )[0]
+        )]
+        nbrs_num = [E_col + 1]
+        curve = np.full(len(libSizes), np.nan, dtype=float)
 
-    for lib_i, libSize in enumerate(libSizes):
-        trial_scores = {column: [] for column in columns}
+        for lib_i, libSize in enumerate(libSizes):
+            score = ccm.compute(X_emb=X_emb,
+                                Y_emb=Y_emb,
+                                library_size=libSize,
+                                sample_size=libSize,
+                                exclusion_window=exclusionRadius,
+                                tp=Tp,
+                                method='simplex',
+                                seed=seed,
+                                trials=trials,
+                                nbrs_num=nbrs_num,
+                                clean_after=False)
+            curve[lib_i] = score[E_col - 1, 0, 0]
 
-        for trial in range(trials):
-            trial_seed = None if seed is None else int(seed) + trial
-
-            score = ccm.score_matrix(X_emb=X_emb,
-                                     Y_emb=Y_emb,
-                                     library_size=libSize,
-                                     sample_size=libSize,
-                                     exclusion_window=exclusionRadius,
-                                     tp=Tp,
-                                     method='simplex',
-                                     seed=trial_seed,
-                                     nbrs_num=nbrs_num,
-                                     clean_after=False)
-
-            for column_i, column in enumerate(columns):
-                E_col = int(E_by_column[column])
-                trial_scores[column].append(
-                    score[E_col - 1, column_i, E_to_src_i[E_col]]
-                )
-
-        for column in columns:
-            curves[column][lib_i] = np.nanmean(trial_scores[column])
+        curves[column] = curve
 
     return curves
 
@@ -87,10 +78,7 @@ def _fast_simplex_projection_rho(dataFrame, columns, target, lib, pred,
 
     lib_start, lib_end   = _as_range(lib)
     pred_start, pred_end = _as_range(pred)
-    pred_stop            = _slice_pred_end(pred_end, Tp)
-
-    if pred_stop <= pred_start - 1:
-        raise ValueError('Prediction interval leaves no prediction samples.')
+    tp = int(Tp)
 
     columns = list(columns)
     if not len(columns):
@@ -102,15 +90,46 @@ def _fast_simplex_projection_rho(dataFrame, columns, target, lib, pred,
 
     y = np.array(dataFrame[target].to_numpy(), copy=True)[:, None]
     rhoD = {}
-    simplex = PairwiseCCM(device='cpu')
+    simplex = PairwiseCCM(device='cpu', memory_budget_gb=3)
 
     for dim, group in dim_groups.items():
         X_lib = []
         X_pred = []
+        y_true = None
         for column_list in group:
             X = np.array(dataFrame.loc[:, column_list].to_numpy(), copy=True)
             X_lib.append(X[lib_start - 1:lib_end])
-            X_pred.append(X[pred_start - 1:pred_stop])
+            pred_src_start = pred_start - 1
+            pred_src_end   = pred_end
+
+            if tp > 0:
+                pred_tgt_start = pred_start - 1 + tp
+                pred_tgt_end   = pred_end + tp
+            elif tp < 0:
+                pred_src_start = pred_start - 1 - tp
+                pred_src_end   = pred_end - tp
+                pred_tgt_start = pred_start - 1
+                pred_tgt_end   = pred_end
+            else:
+                pred_tgt_start = pred_start - 1
+                pred_tgt_end   = pred_end
+
+            pred_src_start = max(0, pred_src_start)
+            pred_tgt_start = max(0, pred_tgt_start)
+            pred_src_end   = min(len(X), pred_src_end)
+            pred_tgt_end   = min(len(y), pred_tgt_end)
+            valid_len      = min(pred_src_end - pred_src_start,
+                                 pred_tgt_end - pred_tgt_start)
+
+            if valid_len <= 0:
+                raise ValueError('Prediction interval leaves no prediction samples.')
+
+            pred_src_end = pred_src_start + valid_len
+            pred_tgt_end = pred_tgt_start + valid_len
+
+            X_pred.append(X[pred_src_start:pred_src_end])
+            if y_true is None:
+                y_true = y[pred_tgt_start:pred_tgt_end, 0]
 
         Y_lib = [y[lib_start - 1:lib_end]]
         pred_vals = simplex.predict_matrix(
@@ -124,8 +143,6 @@ def _fast_simplex_projection_rho(dataFrame, columns, target, lib, pred,
             nbrs_num=dim + 1,
             clean_after=False,
         )
-
-        y_true = y[pred_start - 1 + int(Tp):pred_end, 0]
 
         for i, column_list in enumerate(group):
             rho = _corrcoef_safe(pred_vals[:, 0, 0, i], y_true)
@@ -216,14 +233,14 @@ def _fast_simplex_embed_dimension(dataFrame, columns, target, maxE, lib, pred,
         raise ValueError('Fast EmbedDimension requires |tau| >= 1.')
 
     x = dataFrame[columns].to_numpy()[:, None]
-    y = dataFrame[target].to_numpy()
-    simplex = PairwiseCCM(device='cpu')
+    y = np.array(dataFrame[target].to_numpy(), copy=True)
+    simplex = PairwiseCCM(device='cpu', memory_budget_gb=3)
     rho_list = []
 
     for E in range(1, int(maxE) + 1):
-        X_emb = fastccm_utils.embed(x, E=E, tau=tau_)
-        emb_len = X_emb.shape[1]
-        Y_emb = y[None, -emb_len:, None]
+        X_emb = _as_writable_array(fastccm_utils.embed(x, E=E, tau=tau_)[0])
+        emb_len = X_emb.shape[0]
+        Y_emb = _as_writable_array(y[-emb_len:, None])
 
         offset = (E - 1) * tau_
         lib_s  = max(0, lib_start  - 1 - offset)
@@ -236,14 +253,14 @@ def _fast_simplex_embed_dimension(dataFrame, columns, target, maxE, lib, pred,
             continue
 
         pred_vals = simplex.predict_matrix(
-            X_lib_emb=X_emb[:, lib_s:lib_e],
-            Y_lib_emb=Y_emb[:, lib_s:lib_e],
-            X_pred_emb=X_emb[:, pred_s:pred_e],
+            X_lib_emb=[X_emb[lib_s:lib_e]],
+            Y_lib_emb=[Y_emb[lib_s:lib_e]],
+            X_pred_emb=[X_emb[pred_s:pred_e]],
             library_size=lib_end - lib_start + 1,
-            exclusion_window=None,
+            exclusion_window=exclusionRadius,
             tp=Tp,
             method='simplex',
-            nbrs_num=E + 1,
+            nbrs_num=[E + 1],
             clean_after=False,
         )[:, 0, 0, 0]
 

@@ -1,5 +1,6 @@
 # Distribution modules
 from datetime import datetime
+from time     import perf_counter
 
 # Community modules
 from pandas import DataFrame, concat
@@ -17,6 +18,41 @@ from .FastCCM         import ComputeCCMCurves, ComputeCrossMapColumns, \
 def Run( self ):
     '''Execute MDE workflow pipeline'''
 
+    def _fmt_seconds(seconds):
+        return f'{seconds:.3f}s'
+
+    def _timing_log_enabled():
+        return a.verbose or a.debug
+
+    def _finalize_dim_timing(d, dimStart, dimTiming,
+                             candidateCount, rankedCount, ccmCount):
+        dimElapsed = perf_counter() - dimStart
+        dimTiming['total'] = dimElapsed
+        dimTiming['other'] = max(
+            0.0,
+            dimElapsed - dimTiming['cross_map'] -
+            dimTiming['embed_dimension'] - dimTiming['ccm']
+        )
+        timingByDimension.append((
+            d,
+            candidateCount,
+            rankedCount,
+            ccmCount,
+            dimTiming.copy()
+        ))
+        for key in timingTotals:
+            if key in dimTiming:
+                timingTotals[key] += dimTiming[key]
+
+        if _timing_log_enabled():
+            LogMsg(
+                f'Timing {d}-D: total {_fmt_seconds(dimTiming["total"])} | '
+                f'cross map {_fmt_seconds(dimTiming["cross_map"])} | '
+                f'embed {_fmt_seconds(dimTiming["embed_dimension"])} | '
+                f'ccm {_fmt_seconds(dimTiming["ccm"])} | '
+                f'other {_fmt_seconds(dimTiming["other"])}'
+            )
+
     self.startTime = datetime.now()
 
     # Shortcuts in local scope
@@ -24,6 +60,18 @@ def Run( self ):
     LogMsg = self.LogMsg
 
     self.Validate()
+
+    timingTotals = {
+        'cross_map'       : 0.0,
+        'embed_dimension' : 0.0,
+        'ccm'             : 0.0,
+        'time_delay'      : 0.0,
+        'other'           : 0.0,
+    }
+    timingByDimension = []
+    run_t0 = perf_counter()
+    embedCache = {}
+    ccmCache   = {}
 
     # CCM libSizes from percentiles in pLibSizes
     self.libSizes = [ int( self.dataFrame.shape[0] * (p/100) )
@@ -36,17 +84,23 @@ def Run( self ):
     if a.debug :
         LogMsg( f'libSizes {self.libSizes}  libSizesVec {self.libSizesVec}')
 
-    # Set initial dataColumns as allColumns minus removeColumns
-    # Order doesn't matter, use set for efficiency
+    # Use a stable column order so repeated runs are reproducible.
     allColumns  = self.dataFrame.columns
-    dataColumns = list( set( allColumns ) - set( a.removeColumns ) )
+    dataColumns = sorted( set( allColumns ) - set( a.removeColumns ) )
 
     for d in range( 1, a.D + 1 ) :
+        dimTiming = {
+            'cross_map'       : 0.0,
+            'embed_dimension' : 0.0,
+            'ccm'             : 0.0,
+        }
+        dimStart = perf_counter()
+        rankedCount = 0
+        ccmCount = 0
         # For each d evaluate nested list of columns
         # Each sublist consists of current d MDEcolumns plus columns
-        # Order doesn't matter, use set for efficiency
-        # First, set columns to list of all available non MDEcolumns
-        columns = list( set( dataColumns ) - set( self.MDEcolumns ) )
+        # Build candidate list in a stable order.
+        columns = sorted( set( dataColumns ) - set( self.MDEcolumns ) )
         # Create nested list of each available column with MDEcolumns
         columns = [ [c] + self.MDEcolumns for c in columns ]
 
@@ -57,6 +111,7 @@ def Run( self ):
 
         # rhoD is dict of 'columns:target' : (rho, [columns]) pairs.
         # Note embedded = True
+        t0 = perf_counter()
         rhoD = ComputeCrossMapColumns( self.dataFrame,
                                        columns         = columns,
                                        target          = a.target,
@@ -65,10 +120,14 @@ def Run( self ):
                                        lib             = a.lib,
                                        pred            = a.pred,
                                        embedded        = True )
+        dimTiming['cross_map'] += perf_counter() - t0
 
         # Sort rhoD values by decreasing rho
         # L_rhoD is ranked list of tuples : (rho, [columns])
-        L_rhoD = sorted( rhoD.values(), key = lambda x:x[0], reverse = True )
+        L_rhoD = sorted(
+            rhoD.values(),
+            key = lambda x: (-float(x[0]), tuple(x[1]))
+        )
 
         # Discard L_rhoD elements below a.crossMapRhoMin
         rhoD_ = array( [ _[0] for _ in L_rhoD ] )
@@ -78,10 +137,17 @@ def Run( self ):
         if rhoD_N < 1 :
             # Failed to pass crossMapRhoMin criteria
             LogMsg( f'{d}-D failed to find valid cross map.' )
+            _finalize_dim_timing(
+                d, dimStart, dimTiming,
+                candidateCount = len(columns),
+                rankedCount = 0,
+                ccmCount = 0
+            )
             continue
 
         elif rhoD_N < len( L_rhoD ) :
             L_rhoD = L_rhoD[:rhoD_N] # truncate L_rhoD
+        rankedCount = len( L_rhoD )
 
         # Add this L_rhoD to rhoD
         self.rhoD[ d ] = L_rhoD
@@ -101,8 +167,6 @@ def Run( self ):
             #------------------------------------------------------------
             maxCol_i  = None
             newColumn = None
-            ccmColumns = []
-            ccmEDim    = {}
 
             for col_i in range( len( L_rhoD )  ) :
 
@@ -119,45 +183,54 @@ def Run( self ):
                     # Takens embedding dimension specified in args
                     maxEDim    = a.E
                     maxRhoEDim = L_rhoD[col_i][0].round(4) # CrossMapColumns rho
+                    EDimBackend = 'fixed'
                 else :
                     # Estimate E as local or global maximum EmbedDimension()
-                    if a.debug :
-                        LogMsg( f'   EmbedDimension -> {datetime.now()}' )
-                        LogMsg( f'      L_rhoD[col_i] {columns_i}' )
-
-                    EDimDF, EDimBackend = ComputeEmbedDimension(
-                        dataFrame       = self.dataFrame,
-                        columns         = newColumn,
-                        target          = a.target,
-                        maxE            = a.maxE,
-                        lib             = a.lib,
-                        pred            = a.pred,
-                        Tp              = a.Tp,
-                        tau             = a.tau,
-                        exclusionRadius = a.exclusionRadius,
-                        validLib        = [],
-                        noTime          = a.noTime,
-                        verbose         = a.verbose,
-                        showPlot        = False )
-
-                    if a.debug :
-                        LogMsg( f'   EmbedDimension <- {datetime.now()} [{EDimBackend}]' )
-
-                    # If firstEMax True, return first (lowest E) local maximum
-                    # Find max E(rho)
-                    if a.firstEMax :
-                        iMax = argrelextrema(EDimDF['rho'].to_numpy(),greater)[0]
-
-                        if len( iMax ) :
-                            iMax = iMax[0] # first element of array
-                        else :
-                            # no local maxima, last is max
-                            iMax = len( EDimDF['E'] ) - 1
+                    if newColumn in embedCache :
+                        maxEDim, maxRhoEDim, EDimBackend = embedCache[ newColumn ]
                     else :
-                        iMax = EDimDF['rho'].round(4).argmax() # global maximum
+                        if a.debug :
+                            LogMsg( f'   EmbedDimension -> {datetime.now()}' )
+                            LogMsg( f'      L_rhoD[col_i] {columns_i}' )
 
-                    maxRhoEDim = EDimDF['rho'].iloc[ iMax ].round(4)
-                    maxEDim    = EDimDF['E'].iloc[ iMax ]
+                        t0 = perf_counter()
+                        EDimDF, EDimBackend = ComputeEmbedDimension(
+                            dataFrame       = self.dataFrame,
+                            columns         = newColumn,
+                            target          = a.target,
+                            maxE            = a.maxE,
+                            lib             = a.lib,
+                            pred            = a.pred,
+                            Tp              = a.Tp,
+                            tau             = a.tau,
+                            exclusionRadius = a.exclusionRadius,
+                            validLib        = [],
+                            noTime          = a.noTime,
+                            verbose         = a.verbose,
+                            showPlot        = False )
+                        dimTiming['embed_dimension'] += perf_counter() - t0
+
+                        if a.debug :
+                            LogMsg( f'   EmbedDimension <- {datetime.now()} [{EDimBackend}]' )
+
+                        # If firstEMax True, return first (lowest E) local maximum
+                        # Find max E(rho)
+                        if a.firstEMax :
+                            iMax = argrelextrema(
+                                EDimDF['rho'].to_numpy(), greater )[0]
+
+                            if len( iMax ) :
+                                iMax = iMax[0] # first element of array
+                            else :
+                                # no local maxima, last is max
+                                iMax = len( EDimDF['E'] ) - 1
+                        else :
+                            iMax = EDimDF['rho'].round(4).argmax() # global maximum
+
+                        maxRhoEDim = EDimDF['rho'].iloc[ iMax ].round(4)
+                        maxEDim    = EDimDF['E'].iloc[ iMax ]
+                        embedCache[ newColumn ] = ( maxEDim, maxRhoEDim,
+                                                    EDimBackend )
 
                 if a.debug :
                     LogMsg(f'      EDim {columns_i[0]} ' +\
@@ -168,53 +241,50 @@ def Run( self ):
                     continue # Keep looking
 
                 self.EDim[ f'{newColumn}:{a.target}' ] = maxEDim
-                ccmColumns.append( newColumn )
-                ccmEDim[ newColumn ] = maxEDim
-
-            # <---- for col_i in range( len( L_rhoD )  ) :
-            # <-------------------------------------------
-
-            if len( ccmColumns ) :
                 if a.debug :
                     LogMsg( f'   CCM -> {datetime.now()}' )
-                    LogMsg( f'      {len(ccmColumns)} columns' )
+                    LogMsg( f'      {newColumn}:{a.target}' )
 
-                ccmCurves, ccmBackend = ComputeCCMCurves(
-                    dataFrame       = self.dataFrame,
-                    columns         = ccmColumns,
-                    target          = a.target,
-                    libSizes        = self.libSizes,
-                    sample          = a.sample,
-                    E_by_column     = ccmEDim,
-                    Tp              = a.Tp,
-                    tau             = a.tau,
-                    exclusionRadius = a.exclusionRadius,
-                    seed            = a.ccmSeed,
-                    noTime          = a.noTime )
+                ccmKey = ( newColumn, int( maxEDim ) )
+                if ccmKey in ccmCache :
+                    ccmVals, ccmBackend = ccmCache[ ccmKey ]
+                else :
+                    t0 = perf_counter()
+                    ccmCurves, ccmBackend = ComputeCCMCurves(
+                        dataFrame       = self.dataFrame,
+                        columns         = [ newColumn ],
+                        target          = a.target,
+                        libSizes        = self.libSizes,
+                        sample          = a.sample,
+                        E_by_column     = { newColumn : maxEDim },
+                        Tp              = a.Tp,
+                        tau             = a.tau,
+                        exclusionRadius = a.exclusionRadius,
+                        seed            = a.ccmSeed,
+                        noTime          = a.noTime )
+                    dimTiming['ccm'] += perf_counter() - t0
+                    ccmVals = ccmCurves[ newColumn ]
+                    ccmCache[ ccmKey ] = ( ccmVals, ccmBackend )
+
+                ccmCount += 1
 
                 if a.debug :
                     LogMsg( f'   CCM <- {datetime.now()} [{ccmBackend}]' )
 
-                for col_i in range( len( L_rhoD )  ) :
-                    columns_i = L_rhoD[col_i][1]
-                    newColumn = columns_i[0]
+                # Slope of linear fit to rho(libSizes)
+                lm = LinearRegression().fit( self.libSizesVec,
+                                             nan_to_num( ccmVals ) )
+                slope = round( lm.coef_[0], 5 )
 
-                    if not newColumn in ccmCurves :
-                        continue
+                if a.debug :
+                    LogMsg( f'   {a.target}:{newColumn} slope {slope}' )
 
-                    ccmVals = ccmCurves[ newColumn ]
+                if slope > a.ccmSlope :
+                    maxCol_i = col_i
+                    break # This vector is good
 
-                    # Slope of linear fit to rho(libSizes)
-                    lm = LinearRegression().fit( self.libSizesVec,
-                                                 nan_to_num( ccmVals ) )
-                    slope = round( lm.coef_[0], 5 )
-
-                    if a.debug :
-                        LogMsg( f'   {a.target}:{newColumn} slope {slope}' )
-
-                    if slope > a.ccmSlope :
-                        maxCol_i = col_i
-                        break # This vector is good
+            # <---- for col_i in range( len( L_rhoD )  ) :
+            # <-------------------------------------------
 
             if maxCol_i is not None :
                 # Add newColumn to MDEcolumns
@@ -223,15 +293,29 @@ def Run( self ):
             else :
                 # Failed to pass CCM criteria
                 LogMsg( f'{d}-D CCM failed to find columns.' )
+                _finalize_dim_timing(
+                    d, dimStart, dimTiming,
+                    candidateCount = len(columns),
+                    rankedCount = rankedCount,
+                    ccmCount = ccmCount
+                )
                 break
 
         if a.verbose :
             LogMsg(f'{d}-D {self.MDEcolumns} rho {self.MDErho[-1]}')
 
+        _finalize_dim_timing(
+            d, dimStart, dimTiming,
+            candidateCount = len(columns),
+            rankedCount = rankedCount,
+            ccmCount = 0 if a.noCCM else ccmCount
+        )
+
     #-------------------------------------------------------------
     # Auxiliary time delays
     #-------------------------------------------------------------
     if a.timeDelay :
+        t0 = perf_counter()
         # i of maximal rho in MDEColumns
         MDE_iMax   = self.MDErho.round(4).argmax() # global maximum
         MDE_rhoMax = self.MDErho[MDE_iMax]
@@ -274,11 +358,38 @@ def Run( self ):
                 msg = f'Embed [{evalColumn}] + {a.timeDelay} ' +\
                       f'rho {cmap_tD_rho}'
                 self.LogMsg( msg )
+        timingTotals['time_delay'] += perf_counter() - t0
 
     self.elapsedTime = datetime.now() - self.startTime
+    runElapsed = perf_counter() - run_t0
+    timingTotals['other'] += max(
+        0.0,
+        runElapsed - timingTotals['cross_map'] - timingTotals['embed_dimension']
+        - timingTotals['ccm'] - timingTotals['time_delay']
+    )
 
     self.MDEOut = DataFrame( { 'variables' : self.MDEcolumns,
                                'rho'       : self.MDErho } )
+
+    if _timing_log_enabled():
+        LogMsg('\nRun() timing summary')
+        LogMsg(
+            f'  total {_fmt_seconds(runElapsed)} | '
+            f'cross map {_fmt_seconds(timingTotals["cross_map"])} | '
+            f'embed {_fmt_seconds(timingTotals["embed_dimension"])} | '
+            f'ccm {_fmt_seconds(timingTotals["ccm"])} | '
+            f'time delay {_fmt_seconds(timingTotals["time_delay"])} | '
+            f'other {_fmt_seconds(timingTotals["other"])}'
+        )
+        for d, nColumns, nRanked, nCCM, dimTiming in timingByDimension:
+            LogMsg(
+                f'  {d}-D candidates {nColumns} ranked {nRanked} ccm {nCCM} | '
+                f'total {_fmt_seconds(dimTiming["total"])} | '
+                f'cross map {_fmt_seconds(dimTiming["cross_map"])} | '
+                f'embed {_fmt_seconds(dimTiming["embed_dimension"])} | '
+                f'ccm {_fmt_seconds(dimTiming["ccm"])} | '
+                f'other {_fmt_seconds(dimTiming["other"])}'
+            )
 
     if a.verbose :
         msg = f'\nManifold Dimensional Expansion <------\n' +\
