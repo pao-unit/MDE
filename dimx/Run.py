@@ -9,7 +9,7 @@ from pyEDM  import ComputeError, Embed, Simplex
 from scipy.signal         import argrelextrema
 from sklearn.linear_model import LinearRegression
 
-# Local module from CausalCompression/src
+# Local FastCCM-backed replacements for the original EDM validation steps.
 from .FastCCM         import ComputeCCMCurves, ComputeCrossMapColumns, \
                              ComputeEmbedDimension
 
@@ -70,6 +70,8 @@ def Run( self ):
     }
     timingByDimension = []
     run_t0 = perf_counter()
+    # Current validation is keyed by the candidate column, so these results can
+    # be reused safely across dimensions in the greedy search.
     embedCache = {}
     ccmCache   = {}
 
@@ -112,6 +114,7 @@ def Run( self ):
         # rhoD is dict of 'columns:target' : (rho, [columns]) pairs.
         # Note embedded = True
         t0 = perf_counter()
+        # FastCCM replacement for the original CrossMapColumns() screening step.
         rhoD = ComputeCrossMapColumns( self.dataFrame,
                                        columns         = columns,
                                        target          = a.target,

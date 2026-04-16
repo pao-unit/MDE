@@ -40,6 +40,8 @@ def _fastccm_ccm_curves(dataFrame, columns, target, libSizes, sample,
 
     for column in columns:
         E_col = int(E_by_column[column])
+        # Match pyEDM.CCM(columns=column, target=target): reconstruct target from
+        # the candidate column manifold, then score against the target manifold.
         X_emb = [_as_writable_array(
             fastccm_utils.embed(
                 dataFrame[column].to_numpy()[:, None], E=E_col, tau=tau_
@@ -99,6 +101,8 @@ def _fast_simplex_projection_rho(dataFrame, columns, target, lib, pred,
         for column_list in group:
             X = np.array(dataFrame.loc[:, column_list].to_numpy(), copy=True)
             X_lib.append(X[lib_start - 1:lib_end])
+            # Align source and target windows the same way pyEDM.Simplex does for
+            # out-of-sample prediction with a nonzero Tp.
             pred_src_start = pred_start - 1
             pred_src_end   = pred_end
 
