@@ -25,6 +25,18 @@ def _as_writable_array(array):
     return np.array(array, copy=True, order='C')
 
 
+def _validate_exclusion_window_alignment(lib, pred, exclusionRadius, caller):
+    lib_start, lib_end   = _as_range(lib)
+    pred_start, pred_end = _as_range(pred)
+
+    if int(exclusionRadius) > 0 and lib_start != pred_start:
+        raise ValueError(
+            f'{caller} requires matching lib/pred starts when exclusionRadius > 0.'
+        )
+
+    return lib_start, lib_end, pred_start, pred_end
+
+
 def _fastccm_ccm_curves(dataFrame, columns, target, libSizes, sample,
                         E_by_column, Tp, tau, exclusionRadius, seed):
     _require_fastccm()
@@ -78,8 +90,10 @@ def _fast_simplex_projection_rho(dataFrame, columns, target, lib, pred,
                                  Tp, exclusionRadius):
     _require_fastccm()
 
-    lib_start, lib_end   = _as_range(lib)
-    pred_start, pred_end = _as_range(pred)
+    lib_start, lib_end, pred_start, pred_end = \
+        _validate_exclusion_window_alignment(
+            lib, pred, exclusionRadius, 'Fast CrossMapColumns'
+        )
     tp = int(Tp)
 
     columns = list(columns)
@@ -226,11 +240,10 @@ def _fast_simplex_embed_dimension(dataFrame, columns, target, maxE, lib, pred,
                                   Tp, tau, exclusionRadius):
     _require_fastccm()
 
-    lib_start, lib_end   = _as_range(lib)
-    pred_start, pred_end = _as_range(pred)
-
-    if pred_start <= lib_end + int(exclusionRadius):
-        raise ValueError('Fast EmbedDimension requires disjoint lib/pred ranges.')
+    lib_start, lib_end, pred_start, pred_end = \
+        _validate_exclusion_window_alignment(
+            lib, pred, exclusionRadius, 'Fast EmbedDimension'
+        )
 
     tau_ = abs(int(tau))
     if tau_ < 1:
