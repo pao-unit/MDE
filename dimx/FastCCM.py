@@ -64,7 +64,6 @@ def _fastccm_ccm_curves(dataFrame, columns, target, libSizes, sample,
                 dataFrame[target].to_numpy()[:, None], E=E_col, tau=tau_
             )[0]
         )]
-        nbrs_num = [E_col + 1]
         curve = np.full(len(libSizes), np.nan, dtype=float)
 
         for lib_i, libSize in enumerate(libSizes):
@@ -77,7 +76,6 @@ def _fastccm_ccm_curves(dataFrame, columns, target, libSizes, sample,
                                 method='simplex',
                                 seed=seed,
                                 trials=trials,
-                                nbrs_num=nbrs_num,
                                 clean_after=False)
             curve[lib_i] = score[E_col - 1, 0, 0]
 
@@ -158,7 +156,6 @@ def _fast_simplex_projection_rho(dataFrame, columns, target, lib, pred,
             exclusion_window=exclusionRadius,
             tp=Tp,
             method='simplex',
-            nbrs_num=dim + 1,
             clean_after=False,
         )
 
@@ -277,7 +274,6 @@ def _fast_simplex_embed_dimension(dataFrame, columns, target, maxE, lib, pred,
             exclusion_window=exclusionRadius,
             tp=Tp,
             method='simplex',
-            nbrs_num=[E + 1],
             clean_after=False,
         )[:, 0, 0, 0]
 
