@@ -45,8 +45,8 @@ def _fastccm_ccm_curves(dataFrame, columns, target, libSizes, sample,
     if tau_ < 1:
         raise ValueError('FastCCM requires |tau| >= 1.')
 
+    sample   = max(1, int(sample))
     libSizes = [int(libSize) for libSize in libSizes]
-    trials   = max(1, int(sample))
     curves   = {}
     ccm = PairwiseCCM(device='cpu', memory_budget_gb=3)
 
@@ -67,17 +67,20 @@ def _fastccm_ccm_curves(dataFrame, columns, target, libSizes, sample,
         curve = np.full(len(libSizes), np.nan, dtype=float)
 
         for lib_i, libSize in enumerate(libSizes):
-            score = ccm.compute(X_emb=X_emb,
-                                Y_emb=Y_emb,
-                                library_size=libSize,
-                                sample_size=libSize,
-                                exclusion_window=exclusionRadius,
-                                tp=Tp,
-                                method='simplex',
-                                seed=seed,
-                                trials=trials,
-                                clean_after=False)
-            curve[lib_i] = score[E_col - 1, 0, 0]
+            trial_scores = []
+            for trial_i in range(sample):
+                trial_seed = None if seed is None else int(seed) + trial_i
+                score = ccm.score_matrix(X_emb=X_emb,
+                                         Y_emb=Y_emb,
+                                         library_size=libSize,
+                                         sample_size=None,
+                                         exclusion_window=exclusionRadius,
+                                         tp=Tp,
+                                         method='simplex',
+                                         seed=trial_seed,
+                                         clean_after=False)
+                trial_scores.append(score[0, 0, 0])
+            curve[lib_i] = float(np.mean(trial_scores))
 
         curves[column] = curve
 
