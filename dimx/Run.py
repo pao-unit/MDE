@@ -139,6 +139,7 @@ def Run( self ):
                                              exclusionRadius = a.exclusionRadius,
                                              validLib        = [],
                                              noTime          = a.noTime,
+                                             mpMethod        = a.mpMethod,
                                              verbose         = a.verbose,
                                              numProcess      = a.maxE,
                                              showPlot        = False )
@@ -191,6 +192,7 @@ def Run( self ):
                              tau             = a.tau,
                              exclusionRadius = a.exclusionRadius,
                              seed            = a.ccmSeed,
+                             mpMethod        = a.mpMethod,
                              noTime          = a.noTime )
 
                 if a.debug:

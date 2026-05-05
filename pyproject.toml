@@ -31,8 +31,8 @@ Issues        = "https://github.com/pao-unit/MDE/issues"
 [tool.pdm.version]
 source = "file"
 path   = "dimx/__init__.py"
-[tool.pdm.build]
-includes = ["dimx/", "data/", "example/", "tests"]
+#[tool.pdm.build]
+#includes = ["dimx/"]
 [build-system]
 requires      = ["pdm-backend"]
 build-backend = "pdm.backend"
