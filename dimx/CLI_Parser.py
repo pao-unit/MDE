@@ -158,11 +158,13 @@ def ParseCmdLine( argv = None ):
                         default = 0,
                         help    = 'Number of time delays to add.')
 
-    parser.add_argument('-C', '--cores',
-                        dest    = 'cores', type = int,
+    parser.add_argument('-C', '--crossMapCores',
+                        dest    = 'crossMapCores', type = int,
                         action  = 'store',
-                        default = 5,
-                        help    = 'CrossMapColumns cores.')
+                        default = None,
+                        help    = 'Cross-map core cap; all cores if unset, '
+                                  'otherwise upper bound on CrossMapColumns '
+                                  'sweep pool.')
 
     parser.add_argument('-mp', '--mpMethod',
                         dest    = 'mpMethod', type = str,
@@ -174,6 +176,27 @@ def ParseCmdLine( argv = None ):
                         dest   = 'chunksize', type = int,
                         action = 'store', default = 1,
                         help = 'ProcessPool chunksize')
+
+    parser.add_argument('-sM', '--sharedMem',
+                        dest   = 'sharedMem', type = float,
+                        action = 'store', default = 0.1,
+                        help = 'Shared-memory threshold in decimal MB '
+                               '(1e6 bytes), compared to the DataFrame size; '
+                               '0 forces initargs.')
+
+    parser.add_argument('-lp', '--logPct',
+                        dest   = 'logPct', type = float,
+                        action = 'store', default = 0,
+                        help = 'Cross-map progress band width (percent); '
+                               'requires verbose. 0 = silent, >=100 = single '
+                               'completion message.')
+
+    parser.add_argument('-kw', '--kdWorkers',
+                        dest   = 'kdWorkers', type = int,
+                        action = 'store', default = 1,
+                        help = 'KDTree.query workers in sweep Simplex. '
+                               '1 (default) since the pool parallelizes across '
+                               'candidates; -1 uses all cores per query.')
 
     parser.add_argument('-od', '--outDir',
                         dest    = 'outDir', type = str,

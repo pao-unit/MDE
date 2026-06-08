@@ -63,9 +63,12 @@ class MDE:
                   maxE            = 15,    # maximum embedding dim for CCM
                   firstEMax       = False, # use first local peak for E-dim
                   timeDelay       = 0,     # Number of time delays to add
-                  cores           = 5,     # Number of cores for CrossMapColumns
+                  crossMapCores   = None,  # cross-map core cap; None=all cores
                   mpMethod        = None,  # multiprocessing start context
                   chunksize       = 1,     # multiprocessing chunksize
+                  sharedMem       = 0.1,   # shared-mem threshold (decimal MB)
+                  logPct          = 0,     # cross-map progress band
+                  kdWorkers       = 1,     # KDTree.query workers in Simplex
                   outDir          = './',  # use pathlib for windog
                   outFile         = None,
                   outCSV          = None,
@@ -105,9 +108,12 @@ class MDE:
             args.maxE            = maxE
             args.firstEMax       = firstEMax
             args.timeDelay       = timeDelay
-            args.cores           = cores
+            args.crossMapCores   = crossMapCores
             args.mpMethod        = mpMethod
             args.chunksize       = chunksize
+            args.sharedMem       = sharedMem
+            args.logPct          = logPct
+            args.kdWorkers       = kdWorkers
             args.outDir          = outDir
             args.outFile         = outFile
             args.outCSV          = outCSV
@@ -128,8 +134,10 @@ class MDE:
         self.MDErho      = array( [], dtype = float )
         self.MDEcolumns  = []
         self.MDEOut      = None   # DataFrame : { rho, columns }
-        self.EDim        = dict() # Map of [column:target] : E
+        self.EDim        = dict() # Map of [column:target] : E (accepted)
         self.rhoD        = dict() # Map of dimension : [L_rhoD]
+        self._edimCache  = dict() # column : (maxEDim, maxRhoEDim) compute cache
+        self._ccmCache   = dict() # column : slope compute cache
         self.startTime   = None
         self.elapsedTime = None
 

@@ -1,5 +1,6 @@
 # Distribution modules
 from datetime import datetime
+from os       import cpu_count as _cpu_count
 
 # Community modules
 from pandas import DataFrame, concat
@@ -8,13 +9,13 @@ from pyEDM  import ComputeError, Embed, EmbedDimension, CCM, Simplex
 from scipy.signal         import argrelextrema
 from sklearn.linear_model import LinearRegression
 
-# Local module from CausalCompression/src
-from .CrossMapColumns import CrossMapColumns
+# Local modules
+from .Parallel import CrossMapPool, PrepareNumericFrame, ResolveStartMethod
 
 #-------------------------------------------------------------------
 #-------------------------------------------------------------------
 def Run( self ):
-    '''Execute MDE workflow pipeline'''
+    '''Execute MDE workflow pipeline.'''
 
     self.startTime = datetime.now()
 
@@ -27,7 +28,7 @@ def Run( self ):
     # CCM libSizes from percentiles in pLibSizes
     self.libSizes = [ int( self.dataFrame.shape[0] * (p/100) )
                       for p in a.pLibSizes ]
-    # libSizes ndarray for CCM convergence slope esimate
+    # libSizes ndarray for CCM convergence slope estimate, normalized [0,1]
     self.libSizesVec = array( self.libSizes, dtype = float ).reshape(-1, 1)
     # normalize libSizesVec to [0,1] for equitable CCM slope comparison
     self.libSizesVec = self.libSizesVec / self.libSizesVec[ -1 ]
@@ -35,247 +36,279 @@ def Run( self ):
     if a.debug :
         LogMsg( f'libSizes {self.libSizes}  libSizesVec {self.libSizesVec}')
 
+    # Numeric-only frame used by both the worker sweep and the parent-side
+    # EmbedDimension / CCM validation.  The time column (if noTime is False)
+    # is dropped; pyEDM noTime is therefore forced True everywhere below.
+    numericDF, _ = PrepareNumericFrame( self.dataFrame, a.noTime, LogMsg )
+
+    # mpMethod for pyEDM's own internal pools (EmbedDimension/CCM) - never fork
+    edmMethod = ResolveStartMethod( a.mpMethod )
+    # EmbedDimension parallelizes its E-sweep across processes; cap that count
+    # to available cores so a large maxE does not spawn a process storm.
+    edmProcs = max( 1, min( a.maxE, _cpu_count() or 1 ) )
+
     # Set initial dataColumns as allColumns minus removeColumns
-    # Order doesn't matter, use set for efficiency
-    allColumns  = self.dataFrame.columns
-    dataColumns = list( set( allColumns ) - set( a.removeColumns ) )
+    # Candidate columns come from the numeric frame (the time column is never
+    # a candidate).  Order doesn't matter; use set for efficiency.
+    dataColumns = list( set( numericDF.columns ) - set( a.removeColumns ) )
 
-    for d in range( 1, a.D + 1 ) :
-        # For each d evaluate nested list of columns
-        # Each sublist consists of current d MDEcolumns plus columns
-        # Order doesn't matter, use set for efficiency
-        # First, set columns to list of all available non MDEcolumns
-        columns = list( set( dataColumns ) - set( self.MDEcolumns ) )
-        # Create nested list of each available column with MDEcolumns
-        columns = [ [c] + self.MDEcolumns for c in columns ]
+    # Per-run compute caches (column -> result), cleared each Run().
+    # These hold every evaluated column, including ones that fail a threshold
+    # (negative caching), so a recurring candidate is never recomputed.
+    self._edimCache = {}   # column : (maxEDim, maxRhoEDim)
+    self._ccmCache  = {}   # column : slope
 
-        if a.debug:
-            LogMsg(f'\n{d}-D Cross Map {a.target} -> {columns[:5]}')
-            LogMsg( '---------------------------------------------------------' )
-            LogMsg( f'   CrossMapColumns -> {datetime.now()}' )
+    # CCM cache validity precondition: a recurring column's slope is reused,
+    # which only matches a fresh recompute when CCM is deterministic, i.e.
+    # ccmSeed is fixed.  Warn once if caching CCM under a random seed.
+    if ( not a.noCCM ) and a.ccmSeed is None :
+        LogMsg( 'Run() warning: ccmSeed is None; CCM uses random library '
+                'samples, so cached slopes will not match a recompute. '
+                'Set ccmSeed to a fixed integer for reproducible selection.' )
 
-        # rhoD is dict of 'columns:target' : (rho, [columns]) pairs.
-        # Note embedded = True
-        rhoD = CrossMapColumns( self.dataFrame,
-                                columns         = columns,
-                                target          = a.target, # E = 0,
-                                Tp              = a.Tp,
-                                tau             = a.tau,
-                                exclusionRadius = a.exclusionRadius,
-                                lib             = a.lib,
-                                pred            = a.pred,
-                                embedded        = True,
-                                cores           = a.cores,
-                                mpMethod        = a.mpMethod,
-                                chunksize       = a.chunksize,
-                                noTime          = a.noTime,
-                                verbose         = a.verbose )
+    # Run-constant args for the worker Simplex (noTime forced True in worker).
+    # kdWorkers=1: the pool parallelizes across candidates, so each query is
+    # single threaded (CCM is always workers=1 in pyEDM 2.5.3).
+    # Note embedded = True
+    argsD = { 'target'          : a.target,
+              'lib'             : a.lib,
+              'pred'            : a.pred,
+              'E'               : 0,
+              'embedded'        : True,
+              'exclusionRadius' : a.exclusionRadius,
+              'Tp'              : a.Tp,
+              'tau'             : a.tau,
+              'kdWorkers'       : getattr( a, 'kdWorkers', 1 ) }
 
-        # Sort rhoD values by decreasing rho
-        # L_rhoD is ranked list of tuples : (rho, [columns])
-        L_rhoD = sorted( rhoD.values(), key = lambda x:x[0], reverse = True )
+    # Widest sweep is d = 1 : every non-removed candidate column.
+    maxTasks = len( dataColumns )
 
-        # Discard L_rhoD elements below a.crossMapRhoMin
-        rhoD_ = array( [ _[0] for _ in L_rhoD ] )
-        rhoD_crossMapRhoMin = rhoD_ > a.crossMapRhoMin # boolean array
-        rhoD_N = len( rhoD_[ rhoD_crossMapRhoMin ] )   # number of [] > RhoMin
+    # One persistent pool for the whole run; teardown guaranteed in finally.
+    pool = CrossMapPool( numericDF, argsD,
+                         crossMapCores = a.crossMapCores,
+                         mpMethod  = a.mpMethod,
+                         sharedMem = getattr( a, 'sharedMem', 0.1 ),
+                         maxTasks  = maxTasks,
+                         logMsg    = LogMsg if a.verbose else None )
+    try :
+        logPct = getattr( a, 'logPct', 0 )
 
-        if rhoD_N < 1 :
-            # Failed to pass crossMapRhoMin criteria
-            LogMsg( f'{d}-D failed to find valid cross map.' )
-            continue
+        for d in range( 1, a.D + 1 ) :
+            # For each d evaluate nested list of columns
+            # Each sublist consists of current d MDEcolumns plus columns
+            # Order doesn't matter, use set for efficiency
+            # First, set columns to list of all available non MDEcolumns
+            columns = list( set( dataColumns ) - set( self.MDEcolumns ) )
+            # Each candidate combination = new column + current MDEcolumns.
+            columns = [ [c] + self.MDEcolumns for c in columns ]
 
-        elif rhoD_N < len( L_rhoD ) :
-            L_rhoD = L_rhoD[:rhoD_N] # truncate L_rhoD
+            if a.debug:
+                LogMsg(f'\n{d}-D Cross Map {a.target} -> {columns[:5]}')
+                LogMsg( '---------------------------------------------------' )
+                LogMsg( f'   CrossMapColumns -> {datetime.now()}' )
 
-        # Add this L_rhoD to rhoD
-        self.rhoD[ d ] = L_rhoD
+            # rhoD is dict of 'columns:target' : (rho, [columns]) pairs.
+            # Note embedded = True
+            rhoD = pool.CrossMap( columns, dimension = d,
+                                  logPct = logPct, verbose = a.verbose )
 
-        if a.debug:
-            LogMsg( f'   CrossMapColumns <- {datetime.now()}' )
-            LogMsg( f'      L_rhoD[:3] {L_rhoD[:3]}' )
+            # Rank by decreasing rho
+            L_rhoD = sorted( rhoD.values(), key = lambda x:x[0], reverse = True )
 
-        if a.noCCM :
-            # Take first L_rhoD column with highest ranked rho
-            newColumn = L_rhoD[0][1]
-            self.MDEcolumns.append( newColumn[0] )
-            self.MDErho = append( self.MDErho, L_rhoD[0][0] )
-        else :
-            #------------------------------------------------------------
-            # Validate addition of newColumn with CCM
-            #------------------------------------------------------------
-            maxCol_i  = None
-            newColumn = None
+            # Discard elements below crossMapRhoMin
+            rhoD_ = array( [ _[0] for _ in L_rhoD ] )
+            rhoD_N = int( ( rhoD_ > a.crossMapRhoMin ).sum() )
 
-            for col_i in range( len( L_rhoD )  ) :
+            if rhoD_N < 1 :
+                LogMsg( f'{d}-D failed to find valid cross map.' )
+                continue
+            elif rhoD_N < len( L_rhoD ) :
+                L_rhoD = L_rhoD[:rhoD_N]
 
-                columns_i = L_rhoD[col_i][1] # List of columns
-                newColumn = columns_i[ 0 ]   # First item is new column
+            self.rhoD[ d ] = L_rhoD
 
-                #--------------------------------------------------------
-                # First need CCM embedding dimension
-                #   If args.E provided use it for CCM with the maxRhoEDim
-                #   threshold criteria from CrossMapColumns rho
-                #   If args.E not provided: use EmbedDimension() to find
-                #   EDim and maxRhoEDim
-                if a.E > 0:
-                    # Takens embedding dimension specified in args
-                    maxEDim    = a.E
-                    maxRhoEDim = L_rhoD[col_i][0].round(4) # CrossMapColumns rho
-                else :
-                    # Estimate E as local or global maximum EmbedDimension()
-                    if a.debug :
-                        LogMsg( f'   EmbedDimension -> {datetime.now()}' )
-                        LogMsg( f'      L_rhoD[col_i] {columns_i}' )
+            if a.debug:
+                LogMsg( f'   CrossMapColumns <- {datetime.now()}' )
+                LogMsg( f'      L_rhoD[:3] {L_rhoD[:3]}' )
 
-                    EDimDF = EmbedDimension( dataFrame       = self.dataFrame,
-                                             columns         = newColumn,
-                                             target          = a.target,
-                                             maxE            = a.maxE,
-                                             lib             = a.lib,
-                                             pred            = a.pred,
-                                             Tp              = a.Tp,
-                                             tau             = a.tau,
-                                             exclusionRadius = a.exclusionRadius,
-                                             validLib        = [],
-                                             noTime          = a.noTime,
-                                             mpMethod        = a.mpMethod,
-                                             verbose         = a.verbose,
-                                             numProcess      = a.maxE,
-                                             showPlot        = False )
-
-                    if a.debug :
-                        LogMsg( f'   EmbedDimension <- {datetime.now()}' )
-
-                    # If firstEMax True, return first (lowest E) local maximum
-                    # Find max E(rho)
-                    if a.firstEMax :
-                        iMax = argrelextrema(EDimDF['rho'].to_numpy(),greater)[0]
-
-                        if len( iMax ) :
-                            iMax = iMax[0] # first element of array
-                        else :
-                            # no local maxima, last is max
-                            iMax = len( EDimDF['E'] ) - 1
-                    else :
-                        iMax = EDimDF['rho'].round(4).argmax() # global maximum
-
-                    maxRhoEDim = EDimDF['rho'].iloc[ iMax ].round(4)
-                    maxEDim    = EDimDF['E'].iloc[ iMax ]
-
-                if a.debug :
-                    LogMsg(f'      EDim {columns_i[0]} ' +\
-                           f'E {maxEDim} rho {maxRhoEDim}')
-
-                # Qualify embedding/EDim with maxRhoEDim threshold
-                if maxRhoEDim < a.embedDimRhoMin :
-                    continue # Keep looking
-
-                self.EDim[ f'{newColumn}:{a.target}' ] = maxEDim
-                # Finished looking for maxEDim
-                #--------------------------------------------------------
-
-                #-------------------------------------------------------------
-                # CCM
-                #-------------------------------------------------------------
-                if a.debug :
-                    LogMsg( f'   CCM -> {datetime.now()}' )
-                    LogMsg( f'      {newColumn}:{a.target}' )
-
-                ccmDF = CCM( dataFrame       = self.dataFrame,
-                             columns         = newColumn,
-                             target          = a.target,
-                             libSizes        = self.libSizes,
-                             sample          = a.sample,
-                             E               = maxEDim,
-                             Tp              = a.Tp,
-                             tau             = a.tau,
-                             exclusionRadius = a.exclusionRadius,
-                             seed            = a.ccmSeed,
-                             mpMethod        = a.mpMethod,
-                             noTime          = a.noTime )
-
-                if a.debug:
-                    LogMsg( f'   CCM <- {datetime.now()}' )
-                    LogMsg( ccmDF.to_string() )
-
-                ccmVals = ccmDF[ f'{a.target}:{newColumn}' ].to_numpy()
-
-                # Slope of linear fit to rho(libSizes)
-                lm = LinearRegression().fit( self.libSizesVec,
-                                             nan_to_num( ccmVals ) )
-                slope = round( lm.coef_[0], 5 )
-            
-                if a.debug :
-                    LogMsg( f'   {a.target}:{newColumn} slope {slope}' )
-
-                if slope > a.ccmSlope :
-                    maxCol_i = col_i
-                    break # This vector is good
-                else :
-                    maxCol_i = None
-
-            # <---- for col_i in range( len( L_rhoD )  ) :
-            # <-------------------------------------------
-
-            if maxCol_i is not None :
-                # Add newColumn to MDEcolumns
-                self.MDEcolumns.append( newColumn )
-                self.MDErho = append( self.MDErho, L_rhoD[maxCol_i][0] )
+            if a.noCCM :
+                newColumn = L_rhoD[0][1]
+                self.MDEcolumns.append( newColumn[0] )
+                self.MDErho = append( self.MDErho, L_rhoD[0][0] )
             else :
-                # Failed to pass CCM criteria
-                LogMsg( f'{d}-D CCM failed to find columns.' )
-                break
+                #--------------------------------------------------------
+                # Validate addition of newColumn with CCM
+                #--------------------------------------------------------
+                maxCol_i  = None
+                newColumn = None
 
-        if a.verbose :
-            LogMsg(f'{d}-D {self.MDEcolumns} rho {self.MDErho[-1]}')
+                for col_i in range( len( L_rhoD ) ) :
+
+                    columns_i = L_rhoD[col_i][1] # list of columns
+                    newColumn = columns_i[ 0 ]   # first item is new column
+
+                    #----------------------------------------------------
+                    # CCM embedding dimension (cached per column)
+                    #----------------------------------------------------
+                    if a.E > 0 :
+                        # Static E specified : use it with CrossMapColumns rho
+                        maxEDim    = a.E
+                        maxRhoEDim = round( float( L_rhoD[col_i][0] ), 4 )
+                    elif newColumn in self._edimCache :
+                        maxEDim, maxRhoEDim = self._edimCache[ newColumn ]
+                    else :
+                        if a.debug :
+                            LogMsg( f'   EmbedDimension -> {datetime.now()}' )
+                            LogMsg( f'      {columns_i}' )
+
+                        EDimDF = EmbedDimension(
+                                     dataFrame       = numericDF,
+                                     columns         = newColumn,
+                                     target          = a.target,
+                                     maxE            = a.maxE,
+                                     lib             = a.lib,
+                                     pred            = a.pred,
+                                     Tp              = a.Tp,
+                                     tau             = a.tau,
+                                     exclusionRadius = a.exclusionRadius,
+                                     validLib        = [],
+                                     noTime          = True,
+                                     mpMethod        = edmMethod,
+                                     verbose         = a.verbose,
+                                     numProcess      = edmProcs,
+                                     kdWorkers       = 1,
+                                     showPlot        = False )
+
+                        if a.debug :
+                            LogMsg( f'   EmbedDimension <- {datetime.now()}' )
+
+                        if a.firstEMax :
+                            iMax = argrelextrema( EDimDF['rho'].to_numpy(),
+                                                  greater )[0]
+                            iMax = iMax[0] if len( iMax ) \
+                                   else len( EDimDF['E'] ) - 1
+                        else :
+                            iMax = EDimDF['rho'].round(4).argmax()
+
+                        maxRhoEDim = EDimDF['rho'].iloc[ iMax ].round(4)
+                        maxEDim    = EDimDF['E'].iloc[ iMax ]
+
+                        # Cache before any threshold test (negative caching).
+                        self._edimCache[ newColumn ] = ( maxEDim, maxRhoEDim )
+
+                    if a.debug :
+                        LogMsg( f'      EDim {newColumn} '
+                                f'E {maxEDim} rho {maxRhoEDim}' )
+
+                    # Qualify EDim with maxRhoEDim threshold
+                    if maxRhoEDim < a.embedDimRhoMin :
+                        continue # keep looking
+
+                    self.EDim[ f'{newColumn}:{a.target}' ] = maxEDim
+
+                    #----------------------------------------------------
+                    # CCM convergence slope (cached per column)
+                    #----------------------------------------------------
+                    if newColumn in self._ccmCache :
+                        slope = self._ccmCache[ newColumn ]
+                    else :
+                        if a.debug :
+                            LogMsg( f'   CCM -> {datetime.now()}' )
+                            LogMsg( f'      {newColumn}:{a.target}' )
+
+                        ccmDF = CCM( dataFrame       = numericDF,
+                                     columns         = newColumn,
+                                     target          = a.target,
+                                     libSizes        = self.libSizes,
+                                     sample          = a.sample,
+                                     E               = maxEDim,
+                                     Tp              = a.Tp,
+                                     tau             = a.tau,
+                                     exclusionRadius = a.exclusionRadius,
+                                     seed            = a.ccmSeed,
+                                     mpMethod        = edmMethod,
+                                     noTime          = True )
+
+                        if a.debug:
+                            LogMsg( f'   CCM <- {datetime.now()}' )
+                            LogMsg( ccmDF.to_string() )
+
+                        ccmVals = ccmDF[ f'{a.target}:{newColumn}' ].to_numpy()
+                        lm = LinearRegression().fit( self.libSizesVec,
+                                                     nan_to_num( ccmVals ) )
+                        slope = round( lm.coef_[0], 5 )
+                        self._ccmCache[ newColumn ] = slope
+
+                    if a.debug :
+                        LogMsg( f'   {a.target}:{newColumn} slope {slope}' )
+
+                    if slope > a.ccmSlope :
+                        maxCol_i = col_i
+                        break # this vector is good
+                    else :
+                        maxCol_i = None
+
+                # <---- for col_i ...
+
+                if maxCol_i is not None :
+                    self.MDEcolumns.append( newColumn )
+                    self.MDErho = append( self.MDErho, L_rhoD[maxCol_i][0] )
+                else :
+                    LogMsg( f'{d}-D CCM failed to find columns.' )
+                    break
+
+            if a.verbose :
+                LogMsg( f'{d}-D {self.MDEcolumns} rho {self.MDErho[-1]}' )
+
+    finally :
+        # Guaranteed teardown: pool join + shared-memory unlink, even on error.
+        pool.close()
 
     #-------------------------------------------------------------
     # Auxiliary time delays
     #-------------------------------------------------------------
     if a.timeDelay :
-        # i of maximal rho in MDEColumns
-        MDE_iMax   = self.MDErho.round(4).argmax() # global maximum
-        MDE_rhoMax = self.MDErho[MDE_iMax]
+        MDE_iMax   = self.MDErho.round(4).argmax()
+        MDE_rhoMax = self.MDErho[ MDE_iMax ]
 
         if a.verbose :
             LogMsg( f'  Max rho {MDE_rhoMax} D {MDE_iMax + 1}' )
 
-        # Add time delays
-        # For each of the 1:D (D == MDE_iMax + 1 ) add args.timeDelay
-        # delays to the MDEColumms, see if rho increases
-        # Include target as first column to evaluate
         MDEcolumns_ = self.MDEcolumns[:MDE_iMax + 1]
-        evalColumns = [a.target] + MDEcolumns_
+        evalColumns = [ a.target ] + MDEcolumns_
 
         for evalColumn in evalColumns :
 
-            embd = Embed(dataFrame = self.dataFrame, E = a.timeDelay + 1,
-                         tau = a.tau, columns = evalColumn, includeTime = False)
+            embd = Embed( dataFrame = numericDF, E = a.timeDelay + 1,
+                          tau = a.tau, columns = evalColumn,
+                          includeTime = False )
+            embd = embd.iloc[ :, 1: ] # drop (t-0) first column
 
-            # Drop (t-0) first column
-            embd = embd.iloc[:,1:]
+            tD_df = concat( [ numericDF.loc[ :, evalColumns ], embd ],
+                            axis = 1 )
 
-            # DataFrame for cross mapping, target is first column
-            tD_df = concat( [self.dataFrame.loc[:,evalColumns], embd], axis = 1 )
-
-            # Cross map
             if evalColumn == a.target :
                 columns = tD_df.columns
             else :
                 columns = tD_df.columns[1:] # ignore target
 
+            # Note embedded = True
             cmap_tD = Simplex( dataFrame = tD_df,
-                               target = a.target, columns = columns,
-                               lib = a.lib, pred = a.pred, Tp = a.Tp,
-                               tau = a.tau, embedded = True, noTime = True )
+                               target    = a.target,
+                               columns   = columns,
+                               lib       = a.lib,
+                               pred      = a.pred,
+                               Tp        = a.Tp,
+                               tau       = a.tau,
+                               embedded  = True,
+                               noTime    = True )
+    
             cmap_tD_rho = ComputeError( cmap_tD['Observations'],
                                         cmap_tD['Predictions'] )['rho']
 
             if a.verbose :
-                msg = f'Embed [{evalColumn}] + {a.timeDelay} ' +\
-                      f'rho {cmap_tD_rho}'
-                self.LogMsg( msg )
+                LogMsg( f'Embed [{evalColumn}] + {a.timeDelay} '
+                        f'rho {cmap_tD_rho}' )
 
     self.elapsedTime = datetime.now() - self.startTime
 
@@ -283,10 +316,10 @@ def Run( self ):
                                'rho'       : self.MDErho } )
 
     if a.verbose :
-        msg = f'\nManifold Dimensional Expansion <------\n' +\
-              f'  Run() Elapsed time {self.elapsedTime}\n'  +\
-              f'  {datetime.now()}\n--------------------------------------'
-        LogMsg( msg )
+        LogMsg( f'\nManifold Dimensional Expansion <------\n'
+                f'  Run() Elapsed time {self.elapsedTime}\n'
+                f'  {datetime.now()}\n'
+                '--------------------------------------' )
         LogMsg( self.MDEOut.to_string() )
 
     if a.outFile or a.outCSV :

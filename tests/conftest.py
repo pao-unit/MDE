@@ -86,9 +86,12 @@ MDEArgs = dict( dataFile        = None,  # file name for DataFrame
                 maxE            = 15,    # maximum embedding dim for CCM
                 firstEMax       = False, # use first local peak for E-dim
                 timeDelay       = 0,     # Number of time delays to add
-                cores           = 5,     # Number of cores for CrossMapColumns
+                crossMapCores   = None,  # cross-map core cap; None=all cores
                 mpMethod        = GetMP_ContextName(), # multiprocessing context
                 chunksize       = 1,     # multiprocessing chunksize
+                sharedMem       = 0.1,   # shared-mem threshold (decimal MB)
+                logPct          = 0,     # cross-map progress band
+                kdWorkers       = 1,     # KDTree.query workers in Simplex
                 outDir          = './',  # use pathlib for windog
                 outFile         = None,
                 outCSV          = None,

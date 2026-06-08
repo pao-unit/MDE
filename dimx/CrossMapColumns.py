@@ -1,41 +1,41 @@
 #! /usr/bin/env python3
+'''Cross map a list of candidate column combinations to a target.
+
+CrossMapColumns() is the standalone / command-line entry point: it prepares
+a numeric-only frame, stands up a (single-use) CrossMapPool, runs one
+cross-map sweep, and tears the pool down.  The MDE Run() method does NOT use
+this function; it owns a persistent CrossMapPool reused across all dimensions
+and calls pool.CrossMap() directly.  Both share the worker contract and data
+delivery defined in Parallel.py.
+
+Returns dict of 'columns:target' : (rho, [columns]) pairs.
+'''
 
 # Distribution modules
-import time, argparse
-from   datetime        import datetime
-from   multiprocessing import get_context
-from   itertools       import repeat, starmap
+import argparse
 
 # Community modules
-from pandas import DataFrame, read_csv, concat
-from pyEDM  import Simplex, ComputeError
+from pandas import read_csv
 
-#----------------------------------------------------------------------------
-# 
+# Local
+from .Parallel import CrossMapPool, PrepareNumericFrame
+
 #----------------------------------------------------------------------------
 def CrossMapColumns( data, columns = [], target = None, E = 0,
                      Tp = 1, tau = -1, exclusionRadius = 0,
                      lib = None, pred = None, embedded = False,
-                     cores = 5, mpMethod = None, chunksize = 1,
-                     noTime = False, outputFile = None,
+                     crossMapCores = None, mpMethod = None, sharedMem = 0.1,
+                     noTime = False, logPct = 0, kdWorkers = 1,
                      LogMsg = None, verbose = False, debug = False ):
-
-    '''Cross map target (-t) to columns (-c). 
-       columns can be a list of single columns, or list of multiple columns.
-       If cores > 1 multiprocessing is used with mpMethod and chunksize.
-       Return dict of 'columns:target' : (rho, column) pairs.
-    '''
-
-    if verbose and not LogMsg is None :
-        LogMsg( f'\tCrossMapColumns() start {datetime.now()}' )
-
-    startTime = time.time()
+    '''Cross map target (-t) to columns (-c)
+       columns is a list of column lists (each a candidate combination).
+       A run-scoped pool is created, used once, and closed.
+       Return dict of 'columns:target' : (rho, column) pairs.'''
 
     if not len( columns ) :
-        raise( RuntimeError( 'columns list required' ) )
-
+        raise RuntimeError( 'columns list required' )
     if not target :
-        raise( RuntimeError( 'target required' ) )
+        raise RuntimeError( 'target required' )
 
     # If no lib or pred, create from full data span
     if not lib :
@@ -43,191 +43,94 @@ def CrossMapColumns( data, columns = [], target = None, E = 0,
     if not pred :
         pred = [ 1, data.shape[0] ]
 
-    # Dictionary of arguments for starmap : SimplexFunc
+    # Numeric-only frame; workers force noTime = True against it.
+    numericDF, _ = PrepareNumericFrame( data, noTime, logMsg = LogMsg )
+
+    # Dictionary of arguments for CrossMapPool initializer = InitWorker()
     argsD = { 'target' : target, 'lib' : lib, 'pred' : pred, 'E' : E,
               'embedded' : embedded, 'exclusionRadius' : exclusionRadius,
-              'Tp' : Tp, 'tau' : tau, 'noTime' : noTime }
+              'Tp' : Tp, 'tau' : tau, 'kdWorkers' : kdWorkers }
 
-    # Create iterable for starmap, use repeated copies of argsD, data
-    poolArgs = zip( columns, repeat( argsD ), repeat( data ) )
+    with CrossMapPool( numericDF, argsD,
+                       crossMapCores = crossMapCores,
+                       mpMethod = mpMethod,
+                       sharedMem = sharedMem,
+                       maxTasks = len( columns ),
+                       logMsg   = LogMsg ) as pool :
 
-    if cores > 1 :
-        # Use pool.starmap to distribute among cores
-        mpContext = get_context( mpMethod )
-        with mpContext.Pool( processes = cores ) as pool :
-            CMList = pool.starmap( SimplexFunc, poolArgs, chunksize = chunksize )
-    else :
-        # No parallelization
-        CMList = [ _ for _ in starmap( SimplexFunc, poolArgs ) ]
-
-    # Load CMList results into dictionary
-    CrossMap_D = {}
-    for i in range( len( columns ) ) :
-        key = ','.join( columns[i] )
-        CrossMap_D[ f'{key}:{target}' ] = CMList[ i ] # ( rho, [cols] )
-
-    if verbose and not LogMsg is None :
-        LogMsg( f'\tCrossMapColumns() finished {datetime.now()}' )
+        CrossMap_D = pool.CrossMap( columns, dimension = 1,
+                                    logPct = logPct, verbose = verbose )
 
     if debug :
-        print( "CrossMapColumns() CrossMap_D:" )
+        print( 'CrossMapColumns() CrossMap_D:' )
         print( CrossMap_D )
 
     return CrossMap_D
 
 #----------------------------------------------------------------------------
-#----------------------------------------------------------------------------
-def SimplexFunc( columns, argsD, data ):
-    '''Call pyEDM Simplex using the column, args, and data'''
-
-    cols = list( columns )
-
-    df = Simplex( dataFrame       = data,
-                  columns         = cols,
-                  target          = argsD['target'],
-                  lib             = argsD['lib'],
-                  pred            = argsD['pred'],
-                  E               = argsD['E'],
-                  embedded        = argsD['embedded'],
-                  exclusionRadius = argsD['exclusionRadius'],
-                  Tp              = argsD['Tp'],
-                  tau             = argsD['tau'],
-                  noTime          = argsD['noTime'] )
-
-    err = ComputeError( df['Observations'], df['Predictions'] )
-    rho = err['rho']
-    return rho, cols
-
-#----------------------------------------------------------------------------
-#----------------------------------------------------------------------------
 def CrossMapColumns_CmdLine():
-    '''Wrapper for CrossMapColumns with command line parsing'''
-
+    '''Wrapper for CrossMapColumns with command line parsing.'''
     args = ParseCmdLine()
 
-    # Read data
-    if args.inputFile:
+    if args.inputFile :
         dataFrame = read_csv( args.inputFile )
-    else:
-        raise RuntimeError( "inputFile .csv required" )
+    else :
+        raise RuntimeError( 'inputFile .csv required' )
 
-    # Call CrossMapColumns()
-    df = CrossMapColumns( data = dataFrame,
-                          columns = [args.columns], target = args.target,
-                          E = args.E, Tp = args.Tp, tau = args.tau,
-                          exclusionRadius = args.exclusionRadius,
-                          lib = args.lib, pred = args.pred,
-                          cores = args.cores, mpMethod = args.mpMethod,
-                          chunksize = args.chunksize, noTime = args.noTime,
-                          outputFile = args.outputFile,
-                          verbose = args.verbose, debug = args.debug )
+    CrossMapColumns( data = dataFrame,
+                     columns = [ args.columns ], target = args.target,
+                     E = args.E, Tp = args.Tp, tau = args.tau,
+                     exclusionRadius = args.exclusionRadius,
+                     lib = args.lib, pred = args.pred,
+                     crossMapCores = args.crossMapCores,
+                     mpMethod = args.mpMethod,
+                     sharedMem = args.sharedMem, noTime = args.noTime,
+                     logPct = args.logPct,
+                     verbose = args.verbose, debug = args.debug )
 
-#----------------------------------------------------------------------------
 #----------------------------------------------------------------------------
 def ParseCmdLine():
-    
     parser = argparse.ArgumentParser( description = 'CrossMap Column List' )
 
-    parser.add_argument('-o', '--outputFile',
-                        dest    = 'outputFile', type = str, 
-                        action  = 'store',
-                        default = None,
-                        help    = 'Output file.')
+    parser.add_argument( '-i', '--inputFile', dest = 'inputFile',
+                         type = str, default = None,
+                         help = 'Input data file.' )
+    parser.add_argument( '-nT', '--noTime', dest = 'noTime',
+                         action = 'store_true', default = False,
+                         help = 'noTime.' )
+    parser.add_argument( '-E', '--E', dest = 'E', type = int, default = 0 )
+    parser.add_argument( '-xr', '--exclusionRadius', dest = 'exclusionRadius',
+                         type = int, default = 0 )
+    parser.add_argument( '-T', '--Tp', dest = 'Tp', type = int, default = 1 )
+    parser.add_argument( '-tau', '--tau', dest = 'tau', type = int,
+                         default = -1 )
+    parser.add_argument( '-c', '--columns', nargs = '*', dest = 'columns',
+                         type = str, default = [], help = 'List of columns.' )
+    parser.add_argument( '-t', '--target', dest = 'target', type = str,
+                         default = '', help = 'Data target name.' )
+    parser.add_argument( '-l', '--lib', nargs = '*', dest = 'lib',
+                         type = int, default = [] )
+    parser.add_argument( '-p', '--pred', nargs = '*', dest = 'pred',
+                         type = int, default = [] )
+    parser.add_argument( '-C', '--crossMapCores', dest = 'crossMapCores',
+                         type = int, default = None,
+                         help = 'Cross-map sweep core cap; all cores if unset.' )
+    parser.add_argument( '-mp', '--mpMethod', dest = 'mpMethod', type = str,
+                         default = None, help = 'Start method (never fork).' )
+    parser.add_argument( '-sM', '--sharedMem', dest = 'sharedMem',
+                         type = float, default = 0.1,
+                         help = 'Shared-memory threshold (decimal MB, 1e6 '
+                                'bytes); 0 forces initargs.' )
+    parser.add_argument( '-lp', '--logPct', dest = 'logPct', type = float,
+                         default = 0,
+                         help = 'Progress band width (percent); needs verbose.' )
+    parser.add_argument( '-v', '--verbose', dest = 'verbose',
+                         action = 'store_true', default = False )
+    parser.add_argument( '-g', '--debug', dest = 'debug',
+                         action = 'store_true', default = False )
 
-    parser.add_argument('-i', '--inputFile',
-                        dest    = 'inputFile', type = str, 
-                        action  = 'store',
-                        default = None,
-                        help    = 'Input data file.')
-
-    parser.add_argument('-nT', '--noTime',
-                        dest    = 'noTime',
-                        action  = 'store_true',
-                        default = False,
-                        help    = 'noTime.')
-
-    parser.add_argument('-E', '--E',
-                        dest    = 'E', type = int, 
-                        action  = 'store',
-                        default = 0,
-                        help    = 'E.')
-
-    parser.add_argument('-xr', '--exclusionRadius',
-                        dest    = 'exclusionRadius', type = int, 
-                        action  = 'store',
-                        default = 0,
-                        help    = 'Exclusion Radius.')
-
-    parser.add_argument('-T', '--Tp',
-                        dest    = 'Tp', type = int, 
-                        action  = 'store',
-                        default = 1,
-                        help    = 'Tp.')
-
-    parser.add_argument('-tau', '--tau',
-                        dest    = 'tau', type = int, 
-                        action  = 'store',
-                        default = -1,
-                        help    = 'tau.')
-
-    parser.add_argument('-c', '--columns', nargs = '*',
-                        dest    = 'columns', type = str, 
-                        action  = 'store',
-                        default = [],
-                        help    = 'List of columns.')
-    
-    parser.add_argument('-t', '--target',
-                        dest    = 'target', type = str, 
-                        action  = 'store',
-                        default = '',
-                        help    = 'Data target name.')
-
-    parser.add_argument('-l', '--lib', nargs = '*',
-                        dest    = 'lib', type = int, 
-                        action  = 'store',
-                        default = [],
-                        help    = 'library indices.')
-
-    parser.add_argument('-p', '--pred', nargs = '*',
-                        dest    = 'pred', type = int, 
-                        action  = 'store',
-                        default = [],
-                        help    = 'prediction indices.')
-
-    parser.add_argument('-C', '--cores',
-                        dest    = 'cores', type = int, 
-                        action  = 'store',
-                        default = 5,
-                        help    = 'Multiprocessing cores.')
-
-    parser.add_argument('-mp', '--mpMethod',
-                        dest    = 'mpMethod', type = str,
-                        action  = 'store',
-                        default = None,
-                        help    = 'Multiprocessing start method')
-
-    parser.add_argument('-cz', '--chunksize',
-                        dest   = 'chunksize', type = int,
-                        action = 'store', default = 1,
-                        help = 'ProcessPool chunksize')
-
-    parser.add_argument('-v', '--verbose',
-                        dest    = 'verbose',
-                        action  = 'store_true',
-                        default = False,
-                        help    = 'verbose.')
-
-    parser.add_argument('-g', '--debug',
-                        dest    = 'debug',
-                        action  = 'store_true',
-                        default = False,
-                        help    = 'debug.')
-
-    args = parser.parse_args()
-
-    return args
+    return parser.parse_args()
 
 #----------------------------------------------------------------------------
-# Provide for cmd line invocation and clean module loading
-if __name__ == "__main__":
+if __name__ == '__main__' :
     CrossMapColumns_CmdLine()

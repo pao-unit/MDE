@@ -16,8 +16,8 @@ def test_mde1():
                         target          = 'V5',
                         tau             = -5,
                         exclusionRadius = 10,
-                        crossMapRhoMin  = 0.2,
-                        embedDimRhoMin  = 0.2,
+                        crossMapRhoMin  = 0.3,
+                        embedDimRhoMin  = 0.4,
                         firstEMax       = True) )
 
     mde = dx.MDE(data, **kwargs)
