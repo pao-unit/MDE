@@ -77,7 +77,6 @@ class MDE:
                   verbose         = False,
                   debug           = False,
                   plot            = False,
-                  title           = None,
                   args            = None ):
 
         if args is None:
@@ -123,7 +122,6 @@ class MDE:
             args.verbose         = verbose
             args.debug           = debug
             args.plot            = plot
-            args.title           = title
 
         # Class members
         self.args        = args
@@ -372,14 +370,28 @@ class MDE:
                 self.dataFrame = DataFrame() # Klunky, but effective
 
     #----------------------------------------------------------
-    def Plot( self ):
-        '''MDE plot'''
-        ax = self.MDEOut.plot( 'variables', 'rho', lw = 4,
-                               title = self.args.title )
-        ax.annotate( '\n'.join( self.MDEcolumns ),
-                     xy = (0.65, 0.85), xycoords = 'axes fraction',
+    def Plot( self, title = '', table_xy = (0.6, 0.85),
+              maxTable = None, fontsize = 12, figsize = (6,5) ):
+        '''Plot an MDEOut DataFrame from MDE.Run()'''
+        df = self.MDEOut.copy()
+        D  = [d+1 for d in range(df.shape[0])]
+        df.insert(0,"D",D)
+
+        if maxTable is None:
+            maxTable = df.shape[0]
+
+        df_string = df.iloc[:maxTable,:].round(3).to_string(index=False)
+
+        ax = df.plot( 'D', 'rho', lw = 4, title = title, figsize = figsize )
+        ax.tick_params(axis='both', labelsize=fontsize)
+        ax.xaxis.label.set_size(fontsize)
+        ax.yaxis.label.set_size(fontsize)
+        ax.set_ylabel('MDE ρ', fontsize = fontsize)
+        ax.annotate( df_string, 
+                     xy = table_xy, xycoords = 'axes fraction',
                      annotation_clip = False, fontsize = 11,
-                     verticalalignment = 'top', wrap = True )
+                     verticalalignment = 'top', wrap = True,
+                     fontproperties = 'monospace' )
         plt.show()
 
     #-----------------------------------------------------------

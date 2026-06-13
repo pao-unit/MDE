@@ -100,7 +100,6 @@ MDEArgs = dict( dataFile        = None,  # file name for DataFrame
                 verbose         = False,
                 debug           = False,
                 plot            = False,
-                title           = None,
                 args            = None )
 
 EvalArgs = dict( dataFile        = None,

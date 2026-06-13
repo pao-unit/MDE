@@ -246,12 +246,6 @@ def ParseCmdLine( argv = None ):
                         default = False,
                         help    = 'plot.')
 
-    parser.add_argument('-title', '--title',
-                        dest    = 'title', type = str,
-                        action  = 'store',
-                        default = None,
-                        help    = 'Plot title.')
-
     args = parser.parse_args( argv ) # if argv is None : default = sys.argv[1:]
 
     return args
