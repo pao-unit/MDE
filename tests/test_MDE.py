@@ -3,12 +3,12 @@ import pytest
 import dimx as dx
 from   pyEDM import sampleData
 
-from conftest import MDEArgs, EvalArgs, ValidData, MDE_FlyData
+from conftest import MDEArgs, EvalArgs, ValidData, LoadData
 
 #------------------------------------------------------------
-def test_mde1():
+def test_mde_Lorenz5D():
     '''Lorenz5D : D=4'''
-    data = sampleData["Lorenz5D"]
+    data   = sampleData["Lorenz5D"]
     kwargs = MDEArgs.copy()
     kwargs.update( dict(removeTime      = True,
                         removeColumns   = ['V5'],
@@ -31,9 +31,9 @@ def test_mde1():
     assert mdeOut.equals( valid )
 
 #------------------------------------------------------------
-def test_mde2():
+def test_mde_Fly80_FWD():
     '''Fly FWD'''
-    data = MDE_FlyData()
+    data   = LoadData('Fly80XY_norm_1061.csv')
     kwargs = MDEArgs.copy()
     kwargs.update( dict(removeColumns   = ['index','FWD','Left_Right'],
                         D               = 8,
@@ -56,9 +56,9 @@ def test_mde2():
     assert mdeOut.equals( valid )
 
 #------------------------------------------------------------
-def test_mde3():
-    '''   '''
-    data = MDE_FlyData()
+def test_mde_Fly80_LR():
+    '''Fly Left_Right'''
+    data   = LoadData('Fly80XY_norm_1061.csv')
     kwargs = MDEArgs.copy()
     kwargs.update( dict(removeColumns   = ['index','FWD','Left_Right'],
                         D               = 10,
@@ -82,8 +82,8 @@ def test_mde3():
 
 #------------------------------------------------------------
 def test_evaluate4():
-    '''   '''
-    data = MDE_FlyData()
+    '''Evaluation'''
+    data   = LoadData('Fly80XY_norm_1061.csv')
     kwargs = EvalArgs.copy()
     kwargs.update( dict(mde_columns   = ['TS33','TS4','TS8','TS9','TS32'],
                         columns_range = [1,81],
@@ -101,5 +101,5 @@ def test_evaluate4():
     dfv = ValidData("Evaluate_Fly_FWD_4_Valid.csv")
 
     evOut = round(  df.iloc[:,1:], 5 )
-    valid  = round( dfv.iloc[:,1:], 5 )
+    valid = round( dfv.iloc[:,1:], 5 )
     assert evOut.equals( valid )

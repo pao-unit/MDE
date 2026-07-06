@@ -13,7 +13,7 @@ import os
 from importlib import resources
 from multiprocessing import get_context, get_start_method
 
-from pandas import read_csv
+from pandas import read_csv, read_feather
 
 # ---------------------------------------------------------------------------
 # Multiprocessing context helper  (remove when > Python 3.13)
@@ -40,19 +40,28 @@ VALID_DIR = os.path.join( os.path.dirname(os.path.abspath(__file__)),
 
 def ValidData( filename ):
     '''Return DataFrame of validation CSV from the validation/ directory.'''
+    if '.csv' in filename[-4:] :
+        df = read_csv( os.path.join(VALID_DIR, filename) )
+    elif '.feather' in filename[-8:] :
+        df = read_feather( os.path.join(VALID_DIR, filename) )
+    return df
+    
     return read_csv( os.path.join( VALID_DIR, filename ) )
 
 # ---------------------------------------------------------------------------
-# MDE data file helper
+# data file helper
 # ---------------------------------------------------------------------------
 
-def MDE_FlyData():
-    '''Get dimx Fly data'''
-    import dimx as dx
-    dx_path = dx.__file__
-    data_path = dx_path.replace('__init__.py', 'data/Fly80XY_norm_1061.csv')
+MDE_DIR  = os.path.dirname(os.path.abspath(__file__) )
+DATA_DIR = os.path.join( MDE_DIR.replace( 'tests', 'dimx/data' ) )
 
-    return read_csv( data_path )
+def LoadData( filename ):
+    '''Return data DataFrame from data/ directory.'''
+    if '.csv' in filename[-4:] :
+        df = read_csv( os.path.join(DATA_DIR, filename) )
+    elif '.feather' in filename[-8:] :
+        df = read_feather( os.path.join(DATA_DIR, filename) )
+    return df
 
 # ---------------------------------------------------------------------------
 # Default argument dictionaries — one per API function.
@@ -62,6 +71,7 @@ def MDE_FlyData():
 # ---------------------------------------------------------------------------
 
 MDEArgs = dict( dataFile        = None,  # file name for DataFrame
+                slopeMatrixFile = None,  # CCM slope matrix .csv / .feather
                 dataName        = None,  # dataName in npz archive
                 removeTime      = False, # remove dataFrame first column
                 noTime          = False, # first dataFrame column is data

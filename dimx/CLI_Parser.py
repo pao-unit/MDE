@@ -122,6 +122,17 @@ def ParseCmdLine( argv = None ):
                         default = None,
                         help    = 'CCM seed.')
 
+    parser.add_argument('-smf', '--slopeMatrixFile',
+                        dest    = 'slopeMatrixFile', type = str,
+                        action  = 'store',
+                        default = None,
+                        help    = 'CCM slope matrix file (.csv or .feather) '
+                                  'as returned by pyEDM CCM_Matrix. Square, '
+                                  'with identical .index (source) and '
+                                  '.columns (predicted) labels. If provided '
+                                  '(and not noCCM), CCM slopes are read from '
+                                  'it and EmbedDimension/CCM are skipped.')
+
     parser.add_argument('-E', '--E',
                         dest    = 'E', type = int,
                         action  = 'store',

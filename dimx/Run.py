@@ -23,15 +23,13 @@ def Run( self ):
     a      = self.args
     LogMsg = self.LogMsg
 
-    self.Validate()
+    self.Validate() # Sets self.libSizes from pLibSizes if not specified
 
-    # CCM libSizes from percentiles in pLibSizes
-    self.libSizes = [ int( self.dataFrame.shape[0] * (p/100) )
-                      for p in a.pLibSizes ]
-    # libSizes ndarray for CCM convergence slope estimate, normalized [0,1]
+    # libSizes ndarray for CCM convergence slope estimate.
+    # Normalize by data length N (pyEDM / CCM_Matrix convention) so the
+    # internally computed slope is on the same scale as a supplied matrix.
     self.libSizesVec = array( self.libSizes, dtype = float ).reshape(-1, 1)
-    # normalize libSizesVec to [0,1] for equitable CCM slope comparison
-    self.libSizesVec = self.libSizesVec / self.libSizesVec[ -1 ]
+    self.libSizesVec = self.libSizesVec / self.dataFrame.shape[0]
 
     if a.debug :
         LogMsg( f'libSizes {self.libSizes}  libSizesVec {self.libSizesVec}')
@@ -52,6 +50,19 @@ def Run( self ):
     # a candidate).  Order doesn't matter; use set for efficiency.
     dataColumns = list( set( numericDF.columns ) - set( a.removeColumns ) )
 
+    # Slope-matrix coverage: every candidate column must be a predicted
+    # (column) label in the matrix, since lookups are slopeMatrix.loc[
+    # target, candidate ].  Fail fast on a matrix that does not match data.
+    if self.slopeMatrix is not None :
+        missing = [ c for c in dataColumns if c not in self.slopeMatrix.columns ]
+        if missing :
+            msg = f'Run() slope matrix missing candidate columns: {missing}'
+            LogMsg( msg )
+            raise RuntimeError( msg )
+        if a.verbose :
+            LogMsg( f'Run(): slope matrix covers all {len(dataColumns)} '
+                    'candidate columns.' )
+
     # Per-run compute caches (column -> result), cleared each Run().
     # These hold every evaluated column, including ones that fail a threshold
     # (negative caching), so a recurring candidate is never recomputed.
@@ -61,7 +72,8 @@ def Run( self ):
     # CCM cache validity precondition: a recurring column's slope is reused,
     # which only matches a fresh recompute when CCM is deterministic, i.e.
     # ccmSeed is fixed.  Warn once if caching CCM under a random seed.
-    if ( not a.noCCM ) and a.ccmSeed is None :
+    # Not applicable when slopes are read from a supplied matrix (no CCM run).
+    if ( not a.noCCM ) and self.slopeMatrix is None and a.ccmSeed is None :
         LogMsg( 'Run() warning: ccmSeed is None; CCM uses random library '
                 'samples, so cached slopes will not match a recompute. '
                 'Set ccmSeed to a fixed integer for reproducible selection.' )
@@ -147,101 +159,118 @@ def Run( self ):
                     columns_i = L_rhoD[col_i][1] # list of columns
                     newColumn = columns_i[ 0 ]   # first item is new column
 
-                    #----------------------------------------------------
-                    # CCM embedding dimension (cached per column)
-                    #----------------------------------------------------
-                    if a.E > 0 :
-                        # Static E specified : use it with CrossMapColumns rho
-                        maxEDim    = a.E
-                        maxRhoEDim = round( float( L_rhoD[col_i][0] ), 4 )
-                    elif newColumn in self._edimCache :
-                        maxEDim, maxRhoEDim = self._edimCache[ newColumn ]
+                    if self.slopeMatrix is not None :
+                        #------------------------------------------------
+                        # Slope read from the supplied CCM slope matrix.
+                        # No EmbedDimension, no CCM, no embedDimRhoMin gate.
+                        # NaN cells (diagonal / sparse) fail slope > ccmSlope
+                        # and the candidate is skipped, as a failed CCM would.
+                        #------------------------------------------------
+                        slope = self.slopeMatrix.loc[ newColumn, a.target ]
+
+                        if a.debug :
+                            LogMsg( f'   slope matrix {newColumn}:{a.target} '
+                                    f'slope {slope}' )
                     else :
-                        if a.debug :
-                            LogMsg( f'   EmbedDimension -> {datetime.now()}' )
-                            LogMsg( f'      {columns_i}' )
-
-                        EDimDF = EmbedDimension(
-                                     dataFrame       = numericDF,
-                                     columns         = newColumn,
-                                     target          = a.target,
-                                     maxE            = a.maxE,
-                                     lib             = a.lib,
-                                     pred            = a.pred,
-                                     Tp              = a.Tp,
-                                     tau             = a.tau,
-                                     exclusionRadius = a.exclusionRadius,
-                                     validLib        = [],
-                                     noTime          = True,
-                                     mpMethod        = edmMethod,
-                                     verbose         = a.verbose,
-                                     numProcess      = edmProcs,
-                                     kdWorkers       = 1,
-                                     showPlot        = False )
-
-                        if a.debug :
-                            LogMsg( f'   EmbedDimension <- {datetime.now()}' )
-
-                        if a.firstEMax :
-                            iMax = argrelextrema( EDimDF['rho'].to_numpy(),
-                                                  greater )[0]
-                            iMax = iMax[0] if len( iMax ) \
-                                   else len( EDimDF['E'] ) - 1
+                        #------------------------------------------------
+                        # CCM embedding dimension (cached per column)
+                        #------------------------------------------------
+                        if a.E > 0 :
+                            # Static E specified : use it with CrossMap rho
+                            maxEDim    = a.E
+                            maxRhoEDim = round( float( L_rhoD[col_i][0] ), 4 )
+                        elif newColumn in self._edimCache :
+                            maxEDim, maxRhoEDim = self._edimCache[ newColumn ]
                         else :
-                            iMax = EDimDF['rho'].round(4).argmax()
+                            if a.debug :
+                                LogMsg( f'   EmbedDimension -> {datetime.now()}' )
+                                LogMsg( f'      {columns_i}' )
 
-                        maxRhoEDim = EDimDF['rho'].iloc[ iMax ].round(4)
-                        maxEDim    = EDimDF['E'].iloc[ iMax ]
+                            EDimDF = EmbedDimension(
+                                         dataFrame       = numericDF,
+                                         columns         = newColumn,
+                                         target          = a.target,
+                                         maxE            = a.maxE,
+                                         lib             = a.lib,
+                                         pred            = a.pred,
+                                         Tp              = a.Tp,
+                                         tau             = a.tau,
+                                         exclusionRadius = a.exclusionRadius,
+                                         validLib        = [],
+                                         noTime          = True,
+                                         mpMethod        = edmMethod,
+                                         verbose         = a.verbose,
+                                         numProcess      = edmProcs,
+                                         kdWorkers       = 1,
+                                         showPlot        = False )
 
-                        # Cache before any threshold test (negative caching).
-                        self._edimCache[ newColumn ] = ( maxEDim, maxRhoEDim )
+                            if a.debug :
+                                LogMsg( f'   EmbedDimension <- {datetime.now()}' )
 
-                    if a.debug :
-                        LogMsg( f'      EDim {newColumn} '
-                                f'E {maxEDim} rho {maxRhoEDim}' )
+                            if a.firstEMax :
+                                iMax = argrelextrema( EDimDF['rho'].to_numpy(),
+                                                      greater )[0]
+                                iMax = iMax[0] if len( iMax ) \
+                                       else len( EDimDF['E'] ) - 1
+                            else :
+                                iMax = EDimDF['rho'].round(4).argmax()
 
-                    # Qualify EDim with maxRhoEDim threshold
-                    if maxRhoEDim < a.embedDimRhoMin :
-                        continue # keep looking
+                            maxRhoEDim = EDimDF['rho'].iloc[ iMax ].round(4)
+                            maxEDim    = EDimDF['E'].iloc[ iMax ]
 
-                    self.EDim[ f'{newColumn}:{a.target}' ] = maxEDim
+                            # Cache before any threshold test (negative cache).
+                            self._edimCache[ newColumn ] = ( maxEDim,
+                                                             maxRhoEDim )
 
-                    #----------------------------------------------------
-                    # CCM convergence slope (cached per column)
-                    #----------------------------------------------------
-                    if newColumn in self._ccmCache :
-                        slope = self._ccmCache[ newColumn ]
-                    else :
                         if a.debug :
-                            LogMsg( f'   CCM -> {datetime.now()}' )
-                            LogMsg( f'      {newColumn}:{a.target}' )
+                            LogMsg( f'      EDim {newColumn} '
+                                    f'E {maxEDim} rho {maxRhoEDim}' )
 
-                        ccmDF = CCM( dataFrame       = numericDF,
-                                     columns         = newColumn,
-                                     target          = a.target,
-                                     libSizes        = self.libSizes,
-                                     sample          = a.sample,
-                                     E               = maxEDim,
-                                     Tp              = a.Tp,
-                                     tau             = a.tau,
-                                     exclusionRadius = a.exclusionRadius,
-                                     seed            = a.ccmSeed,
-                                     mpMethod        = edmMethod,
-                                     noTime          = True )
+                        # Qualify EDim with maxRhoEDim threshold
+                        if maxRhoEDim < a.embedDimRhoMin :
+                            continue # keep looking
 
-                        if a.debug:
-                            LogMsg( f'   CCM <- {datetime.now()}' )
-                            LogMsg( ccmDF.to_string() )
+                        self.EDim[ f'{newColumn}:{a.target}' ] = maxEDim
 
-                        ccmVals = ccmDF[ f'{a.target}:{newColumn}' ].to_numpy()
-                        lm = LinearRegression().fit( self.libSizesVec,
-                                                     nan_to_num( ccmVals ) )
-                        slope = round( lm.coef_[0], 5 )
-                        self._ccmCache[ newColumn ] = slope
+                        #------------------------------------------------
+                        # CCM convergence slope (cached per column)
+                        #------------------------------------------------
+                        if newColumn in self._ccmCache :
+                            slope = self._ccmCache[ newColumn ]
+                        else :
+                            if a.debug :
+                                LogMsg( f'   CCM -> {datetime.now()}' )
+                                LogMsg( f'      {newColumn}:{a.target}' )
 
-                    if a.debug :
-                        LogMsg( f'   {a.target}:{newColumn} slope {slope}' )
+                            ccmDF = CCM( dataFrame       = numericDF,
+                                         columns         = newColumn,
+                                         target          = a.target,
+                                         libSizes        = self.libSizes,
+                                         sample          = a.sample,
+                                         E               = maxEDim,
+                                         Tp              = a.Tp,
+                                         tau             = a.tau,
+                                         exclusionRadius = a.exclusionRadius,
+                                         seed            = a.ccmSeed,
+                                         mpMethod        = edmMethod,
+                                         noTime          = True )
 
+                            if a.debug:
+                                LogMsg( f'   CCM <- {datetime.now()}' )
+                                LogMsg( ccmDF.to_string() )
+
+                            ccmVals = \
+                                ccmDF[ f'{a.target}:{newColumn}' ].to_numpy()
+                            lm = LinearRegression().fit( self.libSizesVec,
+                                                         nan_to_num( ccmVals ) )
+                            slope = round( lm.coef_[0], 5 )
+                            self._ccmCache[ newColumn ] = slope
+
+                        if a.debug :
+                            LogMsg( f'   {a.target}:{newColumn} slope {slope}' )
+                    # <---- else: if self.slopeMatrix is not None :
+
+                    # Validate causality with slope exceedance
                     if slope > a.ccmSlope :
                         maxCol_i = col_i
                         break # this vector is good

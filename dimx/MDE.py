@@ -38,7 +38,9 @@ class MDE:
     #-------------------------------------------------------------------
     def __init__( self,
                   dataFrame       = None,  # pandas DataFrame
+                  slopeMatrix     = None,  # precomputed CCM slope DataFrame
                   dataFile        = None,  # file name for DataFrame
+                  slopeMatrixFile = None,  # CCM slope matrix .csv / .feather
                   dataName        = None,  # dataName in npz archive
                   removeTime      = False, # remove dataFrame first column
                   noTime          = False, # first dataFrame column is data
@@ -53,6 +55,7 @@ class MDE:
                   tau             = -1,    # CCM embedding delay
                   exclusionRadius = 0,     # exclusion radius: CCM, CrossMap
                   sample          = 20,    # CCM random sample
+                  libSizes        = [],    # CCM libSizes
                   pLibSizes       = [10, 15, 85, 90], # CCM libSizes percentiles
                   noCCM           = False, # Do not validate with CCM
                   ccmSlope        = 0.01,  # CCM convergence criteria
@@ -83,6 +86,7 @@ class MDE:
             args = ParseCmdLine( argv = [] ) # get default args
             # Insert constructor arguments into args
             args.dataFile        = dataFile
+            args.slopeMatrixFile = slopeMatrixFile
             args.dataName        = dataName
             args.removeTime      = removeTime
             args.noTime          = noTime
@@ -97,6 +101,7 @@ class MDE:
             args.tau             = tau
             args.exclusionRadius = exclusionRadius
             args.sample          = sample
+            args.libSizes        = libSizes
             args.pLibSizes       = pLibSizes
             args.noCCM           = noCCM
             args.ccmSlope        = ccmSlope
@@ -126,8 +131,9 @@ class MDE:
         # Class members
         self.args        = args
         self.dataFrame   = dataFrame
+        self.slopeMatrix = slopeMatrix
         self.target_i    = None
-        self.libSizes    = None
+        self.libSizes    = libSizes
         self.libSizesVec = None
         self.MDErho      = array( [], dtype = float )
         self.MDEcolumns  = []
@@ -158,22 +164,24 @@ class MDE:
            Optionally filter columns with partial match to args.columnNames
         '''
 
+        args = self.args
+
         # Read Data from dataFile
         df = self.ReadData()
 
         # Filter columns if columnNames specified
         # Any partial match of args.columnNames in columns will be included
-        if len( self.args.columnNames ) :
+        if len( args.columnNames ) :
             colD = {}
-            for columnName in self.args.columnNames :
+            for columnName in args.columnNames :
                 colD[ columnName ] = \
                     [ col for col in columns if columnName in col ]
 
             columns = list( chain.from_iterable( colD.values() ) )
 
             # In case the target vector was filtered out, replace it
-            if not self.args.target in columns :
-                columns.append( self.args.target )
+            if not args.target in columns :
+                columns.append( args.target )
 
             df = df[ columns ]
 
@@ -181,11 +189,11 @@ class MDE:
             self.LogMsg( msg )
 
         # Column index of target in data
-        self.target_i = df.columns.get_loc( self.args.target )
+        self.target_i = df.columns.get_loc( args.target )
 
         self.dataFrame = df
 
-        if self.args.verbose :
+        if args.verbose :
             self.LogMsg( f'LoadData(): shape {df.shape}\n' )
 
     #--------------------------------------------------------------
@@ -198,25 +206,26 @@ class MDE:
         if dataFile npz     : Select the args.dataName from npz archive
         if args.removeTime  : drop first column from DataFrame copy
         '''
+        args = self.args
 
-        if self.args.verbose :
-            msg = f'ReadData(): Reading {self.args.dataFile}'
+        if args.verbose :
+            msg = f'ReadData(): Reading {args.dataFile}'
             self.LogMsg( msg )
 
         df       = None
-        dataFile = self.args.dataFile
+        dataFile = args.dataFile
 
         if '.csv' in dataFile[-4:] :
             df = read_csv( dataFile )
 
         elif '.feather' in dataFile[-8:] :
             df = read_feather( dataFile )
-            
+
         elif '.npz' in dataFile[-4:] or '.npy' in dataFile[-4:] :
             if '.npz' in dataFile[-4:] :
                 data_npz = load( dataFile )
                 try:
-                    data = data_npz[ self.args.dataName ]
+                    data = data_npz[ args.dataName ]
                 except KeyError as kerr:
                     msg = f'\nReadData(): Error: .npz keys: {data_npz.files}\n'
                     self.LogMsg( msg )
@@ -230,35 +239,131 @@ class MDE:
             # if there are non-cell initial columns (Time, Epoch, lswim, rswim)
             # cells will have too many entries. Insert the specified ones and
             # remove superflous ones
-            if len( self.args.initDataColumns ) :
-                self.args.initDataColumns.reverse()
-                for initCol in self.args.initDataColumns :
+            if len( args.initDataColumns ) :
+                args.initDataColumns.reverse()
+                for initCol in args.initDataColumns :
                     cells.insert( 0, initCol )
                     removed = cells.pop() # remove last item
 
             df = DataFrame( data, columns = cells )
 
         else:
-            msg = f'\nReadData(): unrecognized file format: {self.args.dataFile}'
+            msg = f'\nReadData(): unrecognized file format: {args.dataFile}'
             self.LogMsg( msg )
             raise RuntimeError( msg )
 
-        if self.args.verbose :
+        if args.verbose :
             msg = f' complete. Shape:{df.shape}'
             self.LogMsg( msg )
 
         return df
 
     #----------------------------------------------------------
+    def LoadSlopeMatrix( self ):
+        '''Resolve the optional CCM slope matrix onto self.args.slopeMatrix.
+
+        Precedence:
+          noCCM True             : ignored (logged), set to None.
+          slopeMatrix provided   : used as-is (API path, DataFrame).
+          slopeMatrixFile set    : read .csv or .feather into a DataFrame.
+          neither                : None.
+
+        Convention: the matrix is square with identical labels on .index
+        (source / embedded dimension) and .columns (predicted dimension);
+        the Run() lookup is slopeMatrix.loc[target, column]. CCM slope is
+        directional, so the matrix is not symmetric.
+
+        .csv     : written without an index (pure float matrix). The first
+                   column must be float - a written index column would parse
+                   as object - and the row labels are reconstructed from the
+                   columns.
+        .feather : read_feather preserves the written index; .index and
+                   .columns must already match.
+        '''
+        args = self.args
+
+        slopeMatrix     = self.slopeMatrix
+        slopeMatrixFile = args.slopeMatrixFile
+
+        # noCCM disables CCM qualification entirely; any matrix is ignored.
+        if args.noCCM :
+            if slopeMatrix is not None or slopeMatrixFile :
+                self.LogMsg( 'LoadSlopeMatrix(): noCCM = True. '
+                             'slope matrix ignored.' )
+            return
+
+        # API path: slopeMatrix DataFrame supplied directly, no file read.
+        if slopeMatrix is not None :
+            return
+
+        # No matrix and no file: nothing to do.
+        if not slopeMatrixFile :
+            return
+
+        if args.verbose :
+            self.LogMsg( f'LoadSlopeMatrix(): Reading {slopeMatrixFile}' )
+
+        if '.csv' in slopeMatrixFile[-4:] :
+            df = read_csv( slopeMatrixFile )
+
+            # A written index column would parse as object, not float.
+            if df.iloc[ :, 0 ].dtype.kind != 'f' :
+                msg = ( 'LoadSlopeMatrix(): .csv first column is not float; '
+                        'expected an index-less float matrix (got dtype '
+                        f'{df.iloc[ :, 0 ].dtype}).' )
+                self.LogMsg( msg )
+                raise RuntimeError( msg )
+
+            if df.shape[0] != df.shape[1] :
+                msg = ( 'LoadSlopeMatrix(): .csv matrix is not square '
+                        f'{df.shape}; cannot map index to columns.' )
+                self.LogMsg( msg )
+                raise RuntimeError( msg )
+
+            # Reconstruct row labels from column labels (identical convention).
+            df.index = df.columns
+
+            if args.verbose :
+                self.LogMsg( 'LoadSlopeMatrix(): .csv float matrix verified; '
+                             f'index reconstructed from {df.shape[1]} columns.' )
+
+        elif '.feather' in slopeMatrixFile[-8:] :
+            df = read_feather( slopeMatrixFile )
+
+            # read_feather preserves the written index; require it to match.
+            if not df.index.equals( df.columns ) :
+                msg = ( 'LoadSlopeMatrix(): .feather .index does not match '
+                        '.columns; slope matrix index was not preserved.' )
+                self.LogMsg( msg )
+                raise RuntimeError( msg )
+
+            if args.verbose :
+                self.LogMsg( 'LoadSlopeMatrix(): .feather index verified to '
+                             f'match {df.shape[1]} columns.' )
+
+        else :
+            msg = ( 'LoadSlopeMatrix(): unrecognized slope matrix format: '
+                    f'{slopeMatrixFile}' )
+            self.LogMsg( msg )
+            raise RuntimeError( msg )
+
+        if args.verbose :
+            self.LogMsg( f'LoadSlopeMatrix(): complete. Shape: {df.shape}' )
+
+        self.slopeMatrix = df
+
+    #----------------------------------------------------------
     def Validate( self ):
         '''Require input data and target.
         If lib & pred not specified, set to [1,N/2], [N/2+1,N]'''
-        if self.args.target is None :
+        args = self.args
+
+        if args.target is None :
             msg = f'Validate() target required.'
             self.LogMsg( msg )
             raise RuntimeError( msg )
 
-        if self.dataFrame is None and self.args.dataFile is None :
+        if self.dataFrame is None and args.dataFile is None :
             msg = f'Validate() dataFrame or dataFile required.'
             self.LogMsg( msg )
             raise RuntimeError( msg )
@@ -266,45 +371,101 @@ class MDE:
         if self.dataFrame is None :
             self.LoadData()
 
-        if self.args.removeTime :
+        if args.removeTime :
             self.dataFrame = \
                 self.dataFrame.copy().drop(columns = self.dataFrame.columns[0])
 
-        if not isinstance( self.args.removeColumns, list ) :
+        if not isinstance( args.removeColumns, list ) :
             msg = f'Validate() removeColumns must be list.'
             self.LogMsg( msg )
             raise RuntimeError( msg )
 
-        if not isinstance( self.args.columnNames, list ) :
+        if not isinstance( args.columnNames, list ) :
             msg = f'Validate() columnNames must be list.'
             self.LogMsg( msg )
             raise RuntimeError( msg )
 
-        if not isinstance( self.args.initDataColumns, list ) :
+        if not isinstance( args.initDataColumns, list ) :
             msg = f'Validate() initDataColumns must be list.'
             self.LogMsg( msg )
             raise RuntimeError( msg )
 
-        if not isinstance( self.args.lib, list ) :
+        if not isinstance( args.lib, list ) :
             msg = f'Validate() lib must be list.'
             self.LogMsg( msg )
             raise RuntimeError( msg )
 
-        if not isinstance( self.args.pred, list ) :
+        if not isinstance( args.pred, list ) :
             msg = f'Validate() pred must be list.'
             self.LogMsg( msg )
             raise RuntimeError( msg )
 
-        if len( self.args.lib ) == 0 :
-            self.args.lib = [ 1, int( self.dataFrame.shape[0]/2 ) ]
-            msg = f'Validate() set empty lib to {self.args.lib}'
+        if len( args.lib ) == 0 :
+            args.lib = [ 1, int( self.dataFrame.shape[0]/2 ) ]
+            msg = f'Validate() set empty lib to {args.lib}'
             self.LogMsg( msg )
 
-        if len( self.args.pred ) == 0 :
-            self.args.pred = [ int( self.dataFrame.shape[0]/2 ) + 1,
+        if len( args.pred ) == 0 :
+            args.pred = [ int( self.dataFrame.shape[0]/2 ) + 1,
                                self.dataFrame.shape[0] ]
-            msg = f'Validate() set empty pred to {self.args.pred}'
+            msg = f'Validate() set empty pred to {args.pred}'
             self.LogMsg( msg )
+
+        # Resolve optional CCM slope matrix (file -> DataFrame, or pass-through)
+        self.LoadSlopeMatrix() # -> self.slopeMatrix
+
+        if self.slopeMatrix is None :
+            if len( self.libSizes ) == 0 :
+                # CCM libSizes from percentiles in pLibSizes
+                self.libSizes = [ int( self.dataFrame.shape[0] * (p/100) )
+                                  for p in args.pLibSizes ]
+
+                if args.verbose :
+                    msg = f'Validate(): libSizes from pLibSizes: {self.libSizes}'
+                    self.LogMsg( msg )
+
+            if min( self.libSizes ) < 5 :
+                msg = 'Validate(): libSizes min must be at least 5'
+                self.LogMsg( msg )
+                raise RuntimeError( msg )
+
+            if max( self.libSizes ) > len( self.dataFrame ) :
+                msg = f'Validate(): libSizes max exceeds {len(self.dataFrame)}'
+                self.LogMsg( msg )
+                raise RuntimeError( msg )
+
+            if len( self.libSizes ) < 3 :
+                msg = 'Validate(): at least 2 libSizes required.'
+                self.LogMsg( msg )
+                raise RuntimeError( msg )
+
+        else : # self.slopeMatrix is not None
+            sM = self.slopeMatrix
+
+            if not isinstance( sM, DataFrame ) :
+                msg = 'Validate() slopeMatrix must be a pandas DataFrame.'
+                self.LogMsg( msg )
+                raise RuntimeError( msg )
+
+            if not sM.index.equals( sM.columns ) :
+                msg = ( 'Validate() slopeMatrix .index and .columns must be '
+                        'identical (same labels, same order).' )
+                self.LogMsg( msg )
+                raise RuntimeError( msg )
+
+            if args.target not in sM.columns :
+                msg = ( 'Validate() slopeMatrix does not contain target '
+                        f'{args.target}.' )
+                self.LogMsg( msg )
+                raise RuntimeError( msg )
+
+            self.LogMsg( 'Validate(): slope matrix in use; CCM slopes read '
+                         'from matrix, EmbedDimension / CCM skipped, '
+                         'embedDimRhoMin inactive.' )
+            if args.verbose :
+                self.LogMsg( f'Validate(): slope matrix {sM.shape[0]}x'
+                             f'{sM.shape[1]}, target '
+                             f'{args.target} present.' )
 
     #-----------------------------------------------------------
     def CreateOutDir( self ):
@@ -334,11 +495,13 @@ class MDE:
         '''MDE output:
              MDEOut DataFrame to args.outCSV
              MDE class object to args.outFile as .pkl or .pkl.gz'''
-        if self.args.outCSV :
-            outFile = f'{self.args.outDir}/{self.args.outCSV}'
+        args = self.args
+
+        if args.outCSV :
+            outFile = f'{args.outDir}/{args.outCSV}'
             self.MDEOut.to_csv( outFile, index = False )
 
-        if self.args.outFile :
+        if args.outFile :
             resetDataFrame = False
             # If self.dataFrame is Huge, limit to something manageable
             # then reset to empty in case Run() is called after this
@@ -352,7 +515,7 @@ class MDE:
                     self.rhoD[i] = self.rhoD[i][:self.maxRhoDlength]
 
             # .pkl or .pkl.gz supported
-            outFile = f'{self.args.outDir}/{self.args.outFile}'
+            outFile = f'{args.outDir}/{args.outFile}'
 
             if '.pkl.gz' in outFile[-7:] :
                 with gzip.open( outFile, 'wb' ) as f:
@@ -397,10 +560,12 @@ class MDE:
     #-----------------------------------------------------------
     def LogMsg( self, msg, end = '\n', mode = 'a' ):
         '''Log msg to stdout and logFile'''
-        if self.args.consoleOut :
+        args = self.args
+
+        if args.consoleOut :
             print( msg, end = end, flush = True )
 
-        if self.args.logFile :
-            outFile = f'{self.args.outDir}/{self.args.logFile}'
+        if args.logFile :
+            outFile = f'{args.outDir}/{args.logFile}'
             with open( outFile, mode ) as f:
                 print( msg, end = end, file = f, flush = True )
