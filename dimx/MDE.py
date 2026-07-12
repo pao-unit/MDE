@@ -146,8 +146,8 @@ class MDE:
         self.elapsedTime = None
 
         # These should be options, but hardcoded for now
-        self.maxOutFileDFcolumns = 50  # Limit on dataFrame columns Output()
-        self.maxRhoDlength       = 500 # Limit on number of rhoD Output()
+        self.maxOutFileDFcolumns = 50   # Limit on dataFrame columns Output()
+        self.maxRhoDlength       = 1000 # Limit on number of rhoD Output()
 
         # Initialization
         self.CreateOutDir()
