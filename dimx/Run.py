@@ -15,7 +15,7 @@ from .Parallel import CrossMapPool, PrepareNumericFrame, ResolveStartMethod
 #-------------------------------------------------------------------
 #-------------------------------------------------------------------
 def Run( self ):
-    '''Execute MDE workflow pipeline.'''
+    '''Execute MDE workflow'''
 
     self.startTime = datetime.now()
 
@@ -132,12 +132,41 @@ def Run( self ):
             rhoD_N = int( ( rhoD_ > a.crossMapRhoMin ).sum() )
 
             if rhoD_N < 1 :
-                LogMsg( f'{d}-D failed to find valid cross map.' )
-                continue
+                # No candidate exceeds crossMapRhoMin: dimension d has no
+                # manifold to expand from, so dimensions d+1 .. D are
+                # undefined. Terminate expansion, mirroring the CCM
+                # dead-end (maxCol_i is None) break below. Record an
+                # explicit empty passing subset at the terminal dimension.
+                if self.slopeMatrix is not None :
+                    self.rhoD_CCM[ d ] = []
+                LogMsg( f'{d}-D failed to find valid cross map; '
+                        'terminating expansion.' )
+                break
             elif rhoD_N < len( L_rhoD ) :
                 L_rhoD = L_rhoD[:rhoD_N]
 
-            self.rhoD[ d ] = L_rhoD
+            # Store only the first column of each candidate. columns[1:] are
+            # the previously-selected components, already in self.MDEcolumns
+            # L_rhoD keeps full column lists for the selection loop below.
+            self.rhoD[ d ] = [ ( rho_i, cols_i[0] ) for rho_i, cols_i in L_rhoD ]
+
+            # When a slopeMatrix is supplied, the CCM slope of every candidate
+            # is a free lookup, so record the full subset of L_rhoD passing
+            # CCM convergence (slope > ccmSlope) here, before the greedy loop
+            # below stops at the first passer. Uses the identical lookup the
+            # selection loop uses, so the subset matches selection exactly
+            # (NaN cells fail > ccmSlope and are excluded, as in selection).
+            # L_rhoD is ranked by decreasing rho; filtering preserves that
+            # order. An empty list marks a dimension where nothing passed.
+            if self.slopeMatrix is not None :
+                passed = []
+                for rho_i, cols_i in L_rhoD :
+                    newCol_i = cols_i[ 0 ]
+                    slope_i  = self.slopeMatrix.loc[ newCol_i, a.target ]
+                    if slope_i > a.ccmSlope :
+                        passed.append( ( rho_i, newCol_i, slope_i ) )
+
+                self.rhoD_CCM[ d ] = passed
 
             if a.debug:
                 LogMsg( f'   CrossMapColumns <- {datetime.now()}' )

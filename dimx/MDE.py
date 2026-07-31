@@ -14,10 +14,6 @@ from matplotlib import pyplot as plt
 # Local modules
 from .CLI_Parser import ParseCmdLine
 
-# Ignore DeprecationWarning for multiprocessing start_method fork :
-# docs.python.org/3/library/multiprocessing.html#contexts-and-start-methods
-filterwarnings( "ignore", category = DeprecationWarning )
-
 # Ignore RuntimeWarning : Likely in pyEDM ComputeError 
 #   lib/python3.13/site-packages/numpy/lib/_function_base_impl.py:3000:
 #   RuntimeWarning: invalid value encountered in divide  c /= stddev[None, :]
@@ -72,6 +68,8 @@ class MDE:
                   sharedMem       = 0.1,   # shared-mem threshold (decimal MB)
                   logPct          = 0,     # cross-map progress band
                   kdWorkers       = 1,     # KDTree.query workers in Simplex
+                  maxRhoDlen      = 1000,  # Output() cap on rhoD per dim
+                  maxRhoD_CCM_len = 1000,  # Output() cap on rhoD_CCM per dim
                   outDir          = './',  # use pathlib for windog
                   outFile         = None,
                   outCSV          = None,
@@ -118,6 +116,8 @@ class MDE:
             args.sharedMem       = sharedMem
             args.logPct          = logPct
             args.kdWorkers       = kdWorkers
+            args.maxRhoDlen      = maxRhoDlen
+            args.maxRhoD_CCM_len = maxRhoD_CCM_len
             args.outDir          = outDir
             args.outFile         = outFile
             args.outCSV          = outCSV
@@ -140,14 +140,23 @@ class MDE:
         self.MDEOut      = None   # DataFrame : { rho, columns }
         self.EDim        = dict() # Map of [column:target] : E (accepted)
         self.rhoD        = dict() # Map of dimension : [L_rhoD]
+        self.rhoD_CCM    = dict() # dim : subset of L_rhoD passing CCM
+                                  # convergence. Populated only when a
+                                  # slopeMatrix is supplied. Empty list at
+                                  # the dimension where expansion terminates.
         self._edimCache  = dict() # column : (maxEDim, maxRhoEDim) compute cache
         self._ccmCache   = dict() # column : slope compute cache
         self.startTime   = None
         self.elapsedTime = None
 
-        # These should be options, but hardcoded for now
+        # maxOutFileDFcolumns should be an option, but hardcoded for now
         self.maxOutFileDFcolumns = 50   # Limit on dataFrame columns Output()
-        self.maxRhoDlength       = 1000 # Limit on number of rhoD Output()
+
+        # rhoD / rhoD_CCM Output() length caps.
+        # CLI: --maxRhoDlen, --maxRhoD_CCM_len ; default 1000.
+        # getattr guards a hand-built args Namespace lacking these attrs.
+        self.maxRhoDlen       = getattr( args, 'maxRhoDlen',      1000 )
+        self.maxRhoD_CCM_len  = getattr( args, 'maxRhoD_CCM_len', 1000 )
 
         # Initialization
         self.CreateOutDir()
@@ -509,10 +518,19 @@ class MDE:
                 self.dataFrame = self.dataFrame.iloc[:,:self.maxOutFileDFcolumns]
                 resetDataFrame = True
 
-            # If number of items in rhoD exceed self.maxRhoDlength, limit
+            # If number of items in rhoD exceed self.maxRhoDlen, limit
             for i in range( 1, len( self.rhoD ) + 1 ):
-                if len( self.rhoD[i] ) > self.maxRhoDlength :
-                    self.rhoD[i] = self.rhoD[i][:self.maxRhoDlength]
+                if len( self.rhoD[i] ) > self.maxRhoDlen :
+                    self.rhoD[i] = self.rhoD[i][:self.maxRhoDlen]
+
+            # Likewise for rhoD_CCM. Bounded by its own length: rhoD_CCM may
+            # hold one more (terminal, empty) key than rhoD when expansion
+            # ends at the crossMapRhoMin gate. Both dicts are contiguous
+            # from dimension 1, so range iteration is safe. Truncation keeps
+            # the head, i.e. the highest-rho passing entries.
+            for i in range( 1, len( self.rhoD_CCM ) + 1 ):
+                if len( self.rhoD_CCM[i] ) > self.maxRhoD_CCM_len :
+                    self.rhoD_CCM[i] = self.rhoD_CCM[i][:self.maxRhoD_CCM_len]
 
             # .pkl or .pkl.gz supported
             outFile = f'{args.outDir}/{args.outFile}'
