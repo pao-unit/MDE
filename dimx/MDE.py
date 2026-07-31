@@ -71,8 +71,8 @@ class MDE:
                   maxRhoDlen      = 1000,  # Output() cap on rhoD per dim
                   maxRhoD_CCM_len = 1000,  # Output() cap on rhoD_CCM per dim
                   outDir          = './',  # use pathlib for windog
-                  outFile         = None,
-                  outCSV          = None,
+                  outFile         = None,  # MDE object dumped to .pkl or .pkl.gz
+                  outCSV          = None,  # MDEOut
                   logFile         = None,
                   consoleOut      = True,  # LogMsg() print() to console
                   verbose         = False,
@@ -129,34 +129,24 @@ class MDE:
             args.plot            = plot
 
         # Class members
-        self.args        = args
-        self.dataFrame   = dataFrame
-        self.slopeMatrix = slopeMatrix
-        self.target_i    = None
-        self.libSizes    = libSizes
-        self.libSizesVec = None
-        self.MDErho      = array( [], dtype = float )
-        self.MDEcolumns  = []
-        self.MDEOut      = None   # DataFrame : { rho, columns }
-        self.EDim        = dict() # Map of [column:target] : E (accepted)
-        self.rhoD        = dict() # Map of dimension : [L_rhoD]
-        self.rhoD_CCM    = dict() # dim : subset of L_rhoD passing CCM
-                                  # convergence. Populated only when a
-                                  # slopeMatrix is supplied. Empty list at
-                                  # the dimension where expansion terminates.
-        self._edimCache  = dict() # column : (maxEDim, maxRhoEDim) compute cache
-        self._ccmCache   = dict() # column : slope compute cache
-        self.startTime   = None
-        self.elapsedTime = None
-
-        # maxOutFileDFcolumns should be an option, but hardcoded for now
-        self.maxOutFileDFcolumns = 50   # Limit on dataFrame columns Output()
-
-        # rhoD / rhoD_CCM Output() length caps.
-        # CLI: --maxRhoDlen, --maxRhoD_CCM_len ; default 1000.
-        # getattr guards a hand-built args Namespace lacking these attrs.
-        self.maxRhoDlen       = getattr( args, 'maxRhoDlen',      1000 )
-        self.maxRhoD_CCM_len  = getattr( args, 'maxRhoD_CCM_len', 1000 )
+        self.args            = args
+        self.dataFrame       = dataFrame
+        self.slopeMatrix     = slopeMatrix
+        self.target_i        = None
+        self.libSizes        = libSizes
+        self.libSizesVec     = None
+        self.MDErho          = array( [], dtype = float )
+        self.MDEcolumns      = []
+        self.MDEOut          = None   # DataFrame : { rho, columns }
+        self.EDim            = dict() # Map of [column:target] : E (accepted)
+        self.rhoD            = dict() # Map of dimension : [L_rhoD]
+        self.rhoD_CCM        = dict() # subset of L_rhoD passing CCM : slopeMatrix
+        self.maxRhoDlen      = maxRhoDlen      # outFile len limit on rhoD
+        self.maxRhoD_CCM_len = maxRhoD_CCM_len # outFile len limit on rhoD_CCM
+        self._edimCache      = dict() # column : (maxEDim, maxRhoEDim) compute cache
+        self._ccmCache       = dict() # column : slope compute cache
+        self.startTime       = None
+        self.elapsedTime     = None
 
         # Initialization
         self.CreateOutDir()
@@ -511,14 +501,16 @@ class MDE:
             self.MDEOut.to_csv( outFile, index = False )
 
         if args.outFile :
-            resetDataFrame = False
-            # If self.dataFrame is Huge, limit to something manageable
-            # then reset to empty in case Run() is called after this
-            if self.dataFrame.shape[1] > self.maxOutFileDFcolumns :
-                self.dataFrame = self.dataFrame.iloc[:,:self.maxOutFileDFcolumns]
-                resetDataFrame = True
+            # Do not include self.dataFrame or self.slopeMatrix in the dump
+            dataFrame_copy = self.dataFrame.copy()
+            self.dataFrame = None
 
-            # If number of items in rhoD exceed self.maxRhoDlen, limit
+            slopeMatrix_copy = None
+            if self.slopeMatrix is not None:
+                slopeMatrix_copy = self.slopeMatrix.copy()
+                self.slopeMatrix = None
+
+            # If number of items in rhoD exceed maxRhoDlen, limit
             for i in range( 1, len( self.rhoD ) + 1 ):
                 if len( self.rhoD[i] ) > self.maxRhoDlen :
                     self.rhoD[i] = self.rhoD[i][:self.maxRhoDlen]
@@ -547,8 +539,9 @@ class MDE:
                 with open( outFile, 'wb' ) as f :
                     dump( self, f )
 
-            if resetDataFrame :
-                self.dataFrame = DataFrame() # Klunky, but effective
+            # Reinstate DataFrame & slopeMatrix
+            self.dataFrame   = dataFrame_copy
+            self.slopeMatrix = slopeMatrix_copy
 
     #----------------------------------------------------------
     def Plot( self, title = '', table_xy = (0.6, 0.85),

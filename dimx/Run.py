@@ -4,7 +4,7 @@ from os       import cpu_count as _cpu_count
 
 # Community modules
 from pandas import DataFrame, concat
-from numpy  import append, array, greater, nan_to_num
+from numpy  import append, array, greater, nan_to_num, float32
 from pyEDM  import ComputeError, Embed, EmbedDimension, CCM, Simplex
 from scipy.signal         import argrelextrema
 from sklearn.linear_model import LinearRegression
@@ -121,14 +121,14 @@ def Run( self ):
 
             # rhoD is dict of 'columns:target' : (rho, [columns]) pairs.
             # Note embedded = True
-            rhoD = pool.CrossMap( columns, dimension = d,
-                                  logPct = logPct, verbose = a.verbose )
+            rhoD_cmap = pool.CrossMap( columns, dimension = d,
+                                       logPct = logPct, verbose = a.verbose )
 
             # Rank by decreasing rho
-            L_rhoD = sorted( rhoD.values(), key = lambda x:x[0], reverse = True )
+            L_rhoD = sorted( rhoD_cmap.values(), key = lambda x:x[0], reverse = True )
 
             # Discard elements below crossMapRhoMin
-            rhoD_ = array( [ _[0] for _ in L_rhoD ] )
+            rhoD_  = array( [ _[0] for _ in L_rhoD ] )
             rhoD_N = int( ( rhoD_ > a.crossMapRhoMin ).sum() )
 
             if rhoD_N < 1 :
@@ -148,7 +148,8 @@ def Run( self ):
             # Store only the first column of each candidate. columns[1:] are
             # the previously-selected components, already in self.MDEcolumns
             # L_rhoD keeps full column lists for the selection loop below.
-            self.rhoD[ d ] = [ ( rho_i, cols_i[0] ) for rho_i, cols_i in L_rhoD ]
+            self.rhoD[ d ] = [ ( rho_i.astype( float32 ), cols_i[0] )
+                               for rho_i, cols_i in L_rhoD ]
 
             # When a slopeMatrix is supplied, the CCM slope of every candidate
             # is a free lookup, so record the full subset of L_rhoD passing
@@ -164,7 +165,7 @@ def Run( self ):
                     newCol_i = cols_i[ 0 ]
                     slope_i  = self.slopeMatrix.loc[ newCol_i, a.target ]
                     if slope_i > a.ccmSlope :
-                        passed.append( ( rho_i, newCol_i, slope_i ) )
+                        passed.append( ( rho_i.astype( float32 ), newCol_i, slope_i ) )
 
                 self.rhoD_CCM[ d ] = passed
 
