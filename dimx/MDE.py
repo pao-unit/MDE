@@ -141,7 +141,7 @@ class MDE:
         self.EDim            = dict() # Map of [column:target] : E (accepted)
         self.rhoD            = dict() # Map of dimension : [L_rhoD]
         self.rhoD_CCM        = dict() # subset of L_rhoD passing CCM : slopeMatrix
-        self.maxLenRhoD      = maxLenRhoD      # outFile len limit on rhoD
+        self.maxLenRhoD      = maxLenRhoD     # outFile len limit on rhoD
         self.maxLenRhoD_CCM  = maxLenRhoD_CCM # outFile len limit on rhoD_CCM
         self._edimCache      = dict() # column : (maxEDim, maxRhoEDim) compute cache
         self._ccmCache       = dict() # column : slope compute cache
@@ -521,7 +521,7 @@ class MDE:
             # ends at the crossMapRhoMin gate. Both dicts are contiguous
             # from dimension 1, so range iteration is safe. Truncation keeps
             # the head, i.e. the highest-rho passing entries.
-            if maxLenRhoD_CCM is not None:
+            if self.maxLenRhoD_CCM is not None:
                 for i in range( 1, len( self.rhoD_CCM ) + 1 ):
                     if len( self.rhoD_CCM[i] ) > self.maxLenRhoD_CCM :
                         self.rhoD_CCM[i] = self.rhoD_CCM[i][:self.maxLenRhoD_CCM]
