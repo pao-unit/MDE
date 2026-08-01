@@ -209,20 +209,19 @@ def ParseCmdLine( argv = None ):
                                '1 (default) since the pool parallelizes across '
                                'candidates; -1 uses all cores per query.')
 
-    parser.add_argument('-mrd', '--maxRhoDlen',
-                        dest   = 'maxRhoDlen', type = int,
+    parser.add_argument('-mrd', '--maxLenRhoD',
+                        dest   = 'maxLenRhoD', type = int,
                         action = 'store', default = 1000,
                         help = 'Output() cap on number of rhoD entries stored '
-                               'per dimension (ranked by decreasing rho). '
-                               'Default 1000.')
+                               'per dimension (ranked by decreasing rho). ')
 
-    parser.add_argument('-mrc', '--maxRhoD_CCM_len',
-                        dest   = 'maxRhoD_CCM_len', type = int,
+    parser.add_argument('-mrc', '--maxLenRhoD_CCM',
+                        dest   = 'maxLenRhoD_CCM', type = int,
                         action = 'store', default = 1000,
                         help = 'Output() cap on number of rhoD_CCM entries '
                                'stored per dimension. rhoD_CCM is the subset '
                                'of rhoD passing CCM convergence, populated '
-                               'when a slopeMatrix is supplied. Default 1000.')
+                               'when a slopeMatrix is supplied.')
 
     parser.add_argument('-od', '--outDir',
                         dest    = 'outDir', type = str,

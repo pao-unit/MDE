@@ -68,8 +68,8 @@ class MDE:
                   sharedMem       = 0.1,   # shared-mem threshold (decimal MB)
                   logPct          = 0,     # cross-map progress band
                   kdWorkers       = 1,     # KDTree.query workers in Simplex
-                  maxRhoDlen      = 1000,  # Output() cap on rhoD per dim
-                  maxRhoD_CCM_len = 1000,  # Output() cap on rhoD_CCM per dim
+                  maxLenRhoD      = None,  # Output() cap on rhoD per dim
+                  maxLenRhoD_CCM  = None,  # Output() cap on rhoD_CCM per dim
                   outDir          = './',  # use pathlib for windog
                   outFile         = None,  # MDE object dumped to .pkl or .pkl.gz
                   outCSV          = None,  # MDEOut
@@ -116,8 +116,8 @@ class MDE:
             args.sharedMem       = sharedMem
             args.logPct          = logPct
             args.kdWorkers       = kdWorkers
-            args.maxRhoDlen      = maxRhoDlen
-            args.maxRhoD_CCM_len = maxRhoD_CCM_len
+            args.maxLenRhoD      = maxLenRhoD
+            args.maxLenRhoD_CCM  = maxLenRhoD_CCM
             args.outDir          = outDir
             args.outFile         = outFile
             args.outCSV          = outCSV
@@ -141,8 +141,8 @@ class MDE:
         self.EDim            = dict() # Map of [column:target] : E (accepted)
         self.rhoD            = dict() # Map of dimension : [L_rhoD]
         self.rhoD_CCM        = dict() # subset of L_rhoD passing CCM : slopeMatrix
-        self.maxRhoDlen      = maxRhoDlen      # outFile len limit on rhoD
-        self.maxRhoD_CCM_len = maxRhoD_CCM_len # outFile len limit on rhoD_CCM
+        self.maxLenRhoD      = maxLenRhoD      # outFile len limit on rhoD
+        self.maxLenRhoD_CCM  = maxLenRhoD_CCM # outFile len limit on rhoD_CCM
         self._edimCache      = dict() # column : (maxEDim, maxRhoEDim) compute cache
         self._ccmCache       = dict() # column : slope compute cache
         self.startTime       = None
@@ -510,19 +510,21 @@ class MDE:
                 slopeMatrix_copy = self.slopeMatrix.copy()
                 self.slopeMatrix = None
 
-            # If number of items in rhoD exceed maxRhoDlen, limit
-            for i in range( 1, len( self.rhoD ) + 1 ):
-                if len( self.rhoD[i] ) > self.maxRhoDlen :
-                    self.rhoD[i] = self.rhoD[i][:self.maxRhoDlen]
+            # If number of items in rhoD exceed maxLenRhoD, limit
+            if self.maxLenRhoD is not None:
+                for i in range( 1, len( self.rhoD ) + 1 ):
+                    if len( self.rhoD[i] ) > self.maxLenRhoD :
+                        self.rhoD[i] = self.rhoD[i][:self.maxLenRhoD]
 
             # Likewise for rhoD_CCM. Bounded by its own length: rhoD_CCM may
             # hold one more (terminal, empty) key than rhoD when expansion
             # ends at the crossMapRhoMin gate. Both dicts are contiguous
             # from dimension 1, so range iteration is safe. Truncation keeps
             # the head, i.e. the highest-rho passing entries.
-            for i in range( 1, len( self.rhoD_CCM ) + 1 ):
-                if len( self.rhoD_CCM[i] ) > self.maxRhoD_CCM_len :
-                    self.rhoD_CCM[i] = self.rhoD_CCM[i][:self.maxRhoD_CCM_len]
+            if maxLenRhoD_CCM is not None:
+                for i in range( 1, len( self.rhoD_CCM ) + 1 ):
+                    if len( self.rhoD_CCM[i] ) > self.maxLenRhoD_CCM :
+                        self.rhoD_CCM[i] = self.rhoD_CCM[i][:self.maxLenRhoD_CCM]
 
             # .pkl or .pkl.gz supported
             outFile = f'{args.outDir}/{args.outFile}'
