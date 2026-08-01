@@ -4,6 +4,7 @@ from os.path  import exists
 from datetime import datetime
 from pickle   import dump
 from warnings import filterwarnings
+from copy     import deepcopy
 import gzip
 
 # Community modules
@@ -510,8 +511,9 @@ class MDE:
                 slopeMatrix_copy = self.slopeMatrix.copy()
                 self.slopeMatrix = None
 
-            # If number of items in rhoD exceed maxLenRhoD, limit
+            # If number of items in rhoD exceed maxLenRhoD, limit in dump
             if self.maxLenRhoD is not None:
+                rhoD_copy = deepcopy(self.rhoD)
                 for i in range( 1, len( self.rhoD ) + 1 ):
                     if len( self.rhoD[i] ) > self.maxLenRhoD :
                         self.rhoD[i] = self.rhoD[i][:self.maxLenRhoD]
@@ -522,6 +524,7 @@ class MDE:
             # from dimension 1, so range iteration is safe. Truncation keeps
             # the head, i.e. the highest-rho passing entries.
             if self.maxLenRhoD_CCM is not None:
+                rhoD_CCM_copy = deepcopy(self.rhoD_CCM)
                 for i in range( 1, len( self.rhoD_CCM ) + 1 ):
                     if len( self.rhoD_CCM[i] ) > self.maxLenRhoD_CCM :
                         self.rhoD_CCM[i] = self.rhoD_CCM[i][:self.maxLenRhoD_CCM]
@@ -544,6 +547,8 @@ class MDE:
             # Reinstate DataFrame & slopeMatrix
             self.dataFrame   = dataFrame_copy
             self.slopeMatrix = slopeMatrix_copy
+            self.rhoD        = rhoD_copy
+            self.rhoD_CCM    = rhoD_CCM_copy
 
     #----------------------------------------------------------
     def Plot( self, title = '', table_xy = (0.6, 0.85),

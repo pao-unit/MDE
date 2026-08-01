@@ -211,13 +211,13 @@ def ParseCmdLine( argv = None ):
 
     parser.add_argument('-mrd', '--maxLenRhoD',
                         dest   = 'maxLenRhoD', type = int,
-                        action = 'store', default = 1000,
+                        action = 'store', default = None,
                         help = 'Output() cap on number of rhoD entries stored '
                                'per dimension (ranked by decreasing rho). ')
 
     parser.add_argument('-mrc', '--maxLenRhoD_CCM',
                         dest   = 'maxLenRhoD_CCM', type = int,
-                        action = 'store', default = 1000,
+                        action = 'store', default = None,
                         help = 'Output() cap on number of rhoD_CCM entries '
                                'stored per dimension. rhoD_CCM is the subset '
                                'of rhoD passing CCM convergence, populated '
