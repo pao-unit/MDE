@@ -547,8 +547,11 @@ class MDE:
             # Reinstate DataFrame & slopeMatrix
             self.dataFrame   = dataFrame_copy
             self.slopeMatrix = slopeMatrix_copy
-            self.rhoD        = rhoD_copy
-            self.rhoD_CCM    = rhoD_CCM_copy
+            # Reinstate rhoD and rhoD_CCM if needed
+            if self.maxLenRhoD is not None:
+                self.rhoD = rhoD_copy
+            if self.maxLenRhoD_CCM is not None:
+                self.rhoD_CCM = rhoD_CCM_copy
 
     #----------------------------------------------------------
     def Plot( self, title = '', table_xy = (0.6, 0.85),
