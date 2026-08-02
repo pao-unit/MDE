@@ -590,3 +590,29 @@ class MDE:
             outFile = f'{args.outDir}/{args.logFile}'
             with open( outFile, mode ) as f:
                 print( msg, end = end, file = f, flush = True )
+
+    #-------------------------------------------------------
+    def rhoD_to_DF( self ) :
+        '''Convert MDE.rhoD to a dict of DataFrame
+        rhoD is a dict of lists of tuples at each dimension
+        rhoD[dim] is the list of tuples for that dim : [(rho,voxel),...]'''
+        rhoD_D = dict() # New dict() with DataFrame's
+        for dim,rhoD_ in self.rhoD.items() :
+            rho,voxels = zip(*rhoD_)
+            df = DataFrame( dict(rho=rho), index = voxels )
+            rhoD_D[dim] = df
+
+        self.rhoD = rhoD_D
+
+    #-------------------------------------------------------
+    def rhoD_CCM_to_DF( self ) :
+        '''Convert a MDE.rhoD_CCM[dim] to a DataFrame
+        rhoD is a dict of lists of tuples at each dimension
+        rhoD[dim] is the list of tuples for that dim : [(rho,voxel,slope),...]'''
+        rhoD_CCM_D = dict() # New dict() with DataFrame's
+        for dim,rhoD_CCM_ in self.rhoD_CCM.items() :
+            rho,voxels,slope = zip(*rhoD_CCM_)
+            df = DataFrame( dict(rho=rho, slope=slope), index = voxels )
+            rhoD_CCM_D[dim] = df
+
+        self.rhoD_CCM = rhoD_CCM_D

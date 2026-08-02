@@ -323,10 +323,15 @@ def Run( self ):
         # Guaranteed teardown: pool join + shared-memory unlink, even on error.
         pool.close()
 
+    #<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+    # <- End of MDE dimensional loop try: for d in range( 1, a.D + 1 )
+    #<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
     #-------------------------------------------------------------
     # Auxiliary time delays
     #-------------------------------------------------------------
     if a.timeDelay :
+        # JP: Needs completion: Does not store any results, just verbose msg
         MDE_iMax   = self.MDErho.round(4).argmax()
         MDE_rhoMax = self.MDErho[ MDE_iMax ]
 
@@ -368,6 +373,10 @@ def Run( self ):
             if a.verbose :
                 LogMsg( f'Embed [{evalColumn}] + {a.timeDelay} '
                         f'rho {cmap_tD_rho}' )
+
+    # Convert rhoD and rhoD_CCM to dict of DataFrame
+    self.rhoD_to_DF()
+    self.rhoD_CCM_to_DF()
 
     self.elapsedTime = datetime.now() - self.startTime
 
