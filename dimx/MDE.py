@@ -1,10 +1,11 @@
 # Python distribution modules
-from os       import mkdir
-from os.path  import exists
-from datetime import datetime
-from pickle   import dump
-from warnings import filterwarnings
-from copy     import deepcopy
+from os          import mkdir
+from os.path     import exists
+from datetime    import datetime
+from pickle      import dump
+from warnings    import filterwarnings
+from copy        import deepcopy
+from dataclasses import fields, replace
 import gzip
 
 # Community modules
@@ -13,7 +14,7 @@ from numpy      import array, load
 from matplotlib import pyplot as plt
 
 # Local modules
-from .CLI_Parser import ParseCmdLine
+from .Config import MDEConfig
 
 # Ignore RuntimeWarning : Likely in pyEDM ComputeError 
 #   lib/python3.13/site-packages/numpy/lib/_function_base_impl.py:3000:
@@ -34,128 +35,74 @@ class MDE:
 
     #-------------------------------------------------------------------
     def __init__( self,
-                  dataFrame       = None,  # pandas DataFrame
-                  slopeMatrix     = None,  # precomputed CCM slope DataFrame
-                  dataFile        = None,  # file name for DataFrame
-                  slopeMatrixFile = None,  # CCM slope matrix .csv / .feather
-                  dataName        = None,  # dataName in npz archive
-                  removeTime      = False, # remove dataFrame first column
-                  noTime          = False, # first dataFrame column is data
-                  columnNames     = [],    # partial match columnNames
-                  initDataColumns = [],    # .npy .npz : see ReadData()
-                  removeColumns   = [],    # columns to remove from dataFrame
-                  D               = 3,     # MDE max dimension
-                  target          = None,  # target variable to predict
-                  lib             = [],    # EDM library start,stop 1-offset
-                  pred            = [],    # EDM prediction start,stop 1-offset
-                  Tp              = 1,     # prediction interval
-                  tau             = -1,    # CCM embedding delay
-                  exclusionRadius = 0,     # exclusion radius: CCM, CrossMap
-                  sample          = 20,    # CCM random sample
-                  libSizes        = [],    # CCM libSizes
-                  pLibSizes       = [10, 15, 85, 90], # CCM libSizes percentiles
-                  noCCM           = False, # Do not validate with CCM
-                  ccmSlope        = 0.01,  # CCM convergence criteria
-                  ccmSeed         = None,  # CCM random seed
-                  E               = 0,     # Static E for all CCM
-                  crossMapRhoMin  = 0.5,   # threshold for L_rhoD in Run()
-                  embedDimRhoMin  = 0.5,   # maxRhoEDim threshold in Run()
-                  maxE            = 15,    # maximum embedding dim for CCM
-                  firstEMax       = False, # use first local peak for E-dim
-                  timeDelay       = 0,     # Number of time delays to add
-                  crossMapCores   = None,  # cross-map core cap; None=all cores
-                  mpMethod        = None,  # multiprocessing start context
-                  chunksize       = 1,     # multiprocessing chunksize
-                  sharedMem       = 0.1,   # shared-mem threshold (decimal MB)
-                  logPct          = 0,     # cross-map progress band
-                  kdWorkers       = 1,     # KDTree.query workers in Simplex
-                  maxLenRhoD      = None,  # Output() cap on rhoD per dim
-                  maxLenRhoD_CCM  = None,  # Output() cap on rhoD_CCM per dim
-                  outDir          = './',  # use pathlib for windog
-                  outFile         = None,  # MDE object dumped to .pkl or .pkl.gz
-                  outCSV          = None,  # MDEOut
-                  logFile         = None,
-                  consoleOut      = True,  # LogMsg() print() to console
-                  verbose         = False,
-                  debug           = False,
-                  plot            = False,
-                  args            = None ):
+                  dataFrame   = None, # pandas DataFrame          (runtime data)
+                  slopeMatrix = None, # precomputed CCM slope DataFrame (runtime)
+                  config      = None, # MDEConfig instance        (object path)
+                  args        = None, # argparse Namespace        (CLI path)
+                  **overrides ):      # MDEConfig field overrides (keyword path)
+        '''Class for Manifold Dimensional Expansion.
 
-        if args is None:
-            args = ParseCmdLine( argv = [] ) # get default args
-            # Insert constructor arguments into args
-            args.dataFile        = dataFile
-            args.slopeMatrixFile = slopeMatrixFile
-            args.dataName        = dataName
-            args.removeTime      = removeTime
-            args.noTime          = noTime
-            args.columnNames     = columnNames
-            args.initDataColumns = initDataColumns
-            args.removeColumns   = removeColumns
-            args.D               = D
-            args.target          = target
-            args.lib             = lib
-            args.pred            = pred
-            args.Tp              = Tp
-            args.tau             = tau
-            args.exclusionRadius = exclusionRadius
-            args.sample          = sample
-            args.libSizes        = libSizes
-            args.pLibSizes       = pLibSizes
-            args.noCCM           = noCCM
-            args.ccmSlope        = ccmSlope
-            args.ccmSeed         = ccmSeed
-            args.E               = E
-            args.crossMapRhoMin  = crossMapRhoMin
-            args.embedDimRhoMin  = embedDimRhoMin
-            args.maxE            = maxE
-            args.firstEMax       = firstEMax
-            args.timeDelay       = timeDelay
-            args.crossMapCores   = crossMapCores
-            args.mpMethod        = mpMethod
-            args.chunksize       = chunksize
-            args.sharedMem       = sharedMem
-            args.logPct          = logPct
-            args.kdWorkers       = kdWorkers
-            args.maxLenRhoD      = maxLenRhoD
-            args.maxLenRhoD_CCM  = maxLenRhoD_CCM
-            args.outDir          = outDir
-            args.outFile         = outFile
-            args.outCSV          = outCSV
-            args.logFile         = logFile
-            args.consoleOut      = consoleOut
-            args.plot            = plot
-            args.verbose         = verbose
-            args.debug           = debug
-            args.plot            = plot
+        See dimx/Config.py for the full parameter list and defaults.
+
+        Parameters are supplied one of three interchangeable ways, all
+        resolved to a single MDEConfig stored as self.args:
+
+            CLI      : MDE( df, args = ParseCmdLine() )
+            object   : MDE( df, config = MDEConfig( target = 'FWD', D = 10 ) )
+            keywords : MDE( df, target = 'FWD', D = 10, lib = [1,300] )
+
+        Precedence: args (CLI) if given; else an explicit config with
+        optional **overrides applied; else a config built from
+        **overrides on top of MDEConfig defaults. Unknown keyword names
+        raise TypeError (fail-fast). 
+        '''
+        if args is not None :
+            # CLI path: map the argparse Namespace onto MDEConfig by
+            # field name. Namespace keys that are not MDEConfig fields
+            # are ignored; MDEConfig fields absent from the Namespace
+            # (e.g. libSizes, which has no CLI flag) keep their default.
+            known  = { f.name for f in fields( MDEConfig ) }
+            config = MDEConfig( **{ k : v for k, v in vars( args ).items()
+                                    if k in known } )
+        elif config is None :
+            # Programmatic keyword path: defaults + caller overrides.
+            config = MDEConfig( **overrides )
+        elif overrides :
+            # Explicit config object plus keyword overrides.
+            config = replace( config, **overrides )
+        # else: caller-supplied config used as-is.
+
+        # Single resolved parameter container. All methods read self.args.<field>
+        self.args = config
+
+        # Runtime data objects: not configuration, excluded from outFile pickle.
+        self.dataFrame   = dataFrame
+        self.slopeMatrix = slopeMatrix
 
         # Class members
-        self.args            = args
-        self.dataFrame       = dataFrame
-        self.slopeMatrix     = slopeMatrix
-        self.target_i        = None
-        self.libSizes        = libSizes
-        self.libSizesVec     = None
-        self.MDErho          = array( [], dtype = float )
-        self.MDEcolumns      = []
-        self.MDEOut          = None   # DataFrame : { rho, columns }
-        self.EDim            = dict() # Map of [column:target] : E (accepted)
-        self.rhoD            = dict() # Map of dimension : [L_rhoD]
-        self.rhoD_CCM        = dict() # subset of L_rhoD passing CCM : slopeMatrix
-        self.maxLenRhoD      = maxLenRhoD     # outFile len limit on rhoD
-        self.maxLenRhoD_CCM  = maxLenRhoD_CCM # outFile len limit on rhoD_CCM
-        self._edimCache      = dict() # column : (maxEDim, maxRhoEDim) compute cache
-        self._ccmCache       = dict() # column : slope compute cache
-        self.startTime       = None
-        self.elapsedTime     = None
+        self.target_i       = None
+        self.libSizes       = list( self.args.libSizes ) # Validate() may mutate
+        self.libSizesVec    = None
+        self.MDErho         = array( [], dtype = float )
+        self.MDEcolumns     = []
+        self.MDEOut         = None   # DataFrame : { rho, columns }
+        self.EDim           = dict() # Map of [column:target] : E (accepted)
+        self.rhoD           = dict() # Map of dimension : [L_rhoD]
+        self.rhoD_CCM       = dict() # subset of L_rhoD passing CCM : slopeMatrix
+        self.maxLenRhoD     = self.args.maxLenRhoD     # outFile len limit on rhoD
+        self.maxLenRhoD_CCM = self.args.maxLenRhoD_CCM # outFile limit on rhoD_CCM
+        self._edimCache     = dict() # column : (maxEDim, maxRhoEDim) compute cache
+        self._ccmCache      = dict() # column : slope compute cache
+        self.startTime      = None
+        self.elapsedTime    = None
 
         # Initialization
         self.CreateOutDir()
 
         if self.args.verbose :
             msg = f'\nManifold Dimensional Expansion ' +\
-                f'>------\n  {datetime.now()}' +\
-                '\n--------------------------------------------\n'
+                  f'>------\n {datetime.now()}' +\
+                  '\n--------------------------------------------\n'
             self.LogMsg( msg )
 
     #-------------------------------------------------------------------
