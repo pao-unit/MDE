@@ -6,6 +6,7 @@ from pickle      import dump
 from warnings    import filterwarnings
 from copy        import deepcopy
 from dataclasses import fields, replace
+from itertools   import chain
 import gzip
 
 # Community modules
@@ -105,6 +106,61 @@ class MDE:
                   '\n--------------------------------------------\n'
             self.LogMsg( msg )
 
+    #----------------------------------------------------------
+    @staticmethod
+    def LoadDataFrame( config ):
+        '''Read config.dataFile from .npy .npz .feather or .csv to DataFrame. 
+
+        If dataFile csv      : return DataFrame
+        If dataFile npy npz  : return DataFrame with columns [c0, c1, c2, ...]
+                               First n column names can be specified with
+                               self.args.initColumns
+        if dataFile npz      : Select the args.dataName from npz archive
+        if config.removeTim  : drop first column from DataFrame copy
+        
+        The state-free core of ReadData(): handles .csv / .feather /
+        .npy / .npz and initDataColumns naming, applying no
+        columnNames / removeTime filtering ( those stay per-instance in
+        LoadData() / Validate() ). Shared so ReverseMDE can load the
+        frame once, up front, using the same reader MDE uses, without a
+        second file parser or formula drift.
+        '''
+        dataFile = config.dataFile
+        if '.csv' in dataFile[-4:] :
+            df = read_csv( dataFile )
+
+        elif '.feather' in dataFile[-8:] :
+            df = read_feather( dataFile )
+
+        elif '.npz' in dataFile[-4:] or '.npy' in dataFile[-4:] :
+            if '.npz' in dataFile[-4:] :
+                data_npz = load( dataFile )
+                try :
+                    data = data_npz[ config.dataName ]
+                except KeyError as kerr :
+                    raise KeyError( f'LoadDataFrame(): .npz keys: '
+                                    f'{data_npz.files}' ) from kerr
+            else :
+                data = load( dataFile )
+
+            # Create vector of columns names c0, c1...
+            cells = [ f'c{col}' for col in range( data.shape[1] ) ]
+
+            # if there are non-cell initial columns (Time, Epoch, lswim, rswim)
+            # cells will have too many entries. Insert the specified ones and
+            # remove superflous ones
+            if len( config.initDataColumns ) :
+                config.initDataColumns.reverse()
+                for initCol in config.initDataColumns :
+                    cells.insert( 0, initCol )
+                cells.pop()
+
+            df = DataFrame( data, columns = cells )
+        else :
+            raise RuntimeError( 'LoadDataFrame(): unrecognized file '
+                                f'format: {dataFile}' )
+        return df
+
     #-------------------------------------------------------------------
     def LoadData( self ):
         '''Wrapper for ReadData() that reads .csv .npy .npz .feather
@@ -120,6 +176,7 @@ class MDE:
         # Any partial match of args.columnNames in columns will be included
         if len( args.columnNames ) :
             colD = {}
+            columns = list( df.columns )
             for columnName in args.columnNames :
                 colD[ columnName ] = \
                     [ col for col in columns if columnName in col ]
@@ -145,64 +202,19 @@ class MDE:
 
     #--------------------------------------------------------------
     def ReadData( self ) :
-        '''Read data from .npy .npz .feather or .csv
-        If dataFile csv     : return DataFrame
-        If dataFile npy npz : return DataFrame with columns [c0, c1, c2, ...]
-                              First n column names can be specified with
-                              self.args.initColumns
-        if dataFile npz     : Select the args.dataName from npz archive
-        if args.removeTime  : drop first column from DataFrame copy
+        '''Read dataFile into a DataFrame via MDE.LoadDataFrame.
+
+        Thin instance wrapper adding verbose logging; the format
+        handling lives in the shared static LoadDataFrame( config ).
         '''
         args = self.args
+        if args.verbose :
+            self.LogMsg( f'ReadData(): Reading {args.dataFile}' )
+
+        df = self.LoadDataFrame( args )
 
         if args.verbose :
-            msg = f'ReadData(): Reading {args.dataFile}'
-            self.LogMsg( msg )
-
-        df       = None
-        dataFile = args.dataFile
-
-        if '.csv' in dataFile[-4:] :
-            df = read_csv( dataFile )
-
-        elif '.feather' in dataFile[-8:] :
-            df = read_feather( dataFile )
-
-        elif '.npz' in dataFile[-4:] or '.npy' in dataFile[-4:] :
-            if '.npz' in dataFile[-4:] :
-                data_npz = load( dataFile )
-                try:
-                    data = data_npz[ args.dataName ]
-                except KeyError as kerr:
-                    msg = f'\nReadData(): Error: .npz keys: {data_npz.files}\n'
-                    self.LogMsg( msg )
-                    raise KeyError( kerr )
-            else :
-                data = load( dataFile )
-
-            # Create vector of columns names c0, c1...
-            cells = [ f'c{col}' for col in range( data.shape[1] ) ]
-
-            # if there are non-cell initial columns (Time, Epoch, lswim, rswim)
-            # cells will have too many entries. Insert the specified ones and
-            # remove superflous ones
-            if len( args.initDataColumns ) :
-                args.initDataColumns.reverse()
-                for initCol in args.initDataColumns :
-                    cells.insert( 0, initCol )
-                    removed = cells.pop() # remove last item
-
-            df = DataFrame( data, columns = cells )
-
-        else:
-            msg = f'\nReadData(): unrecognized file format: {args.dataFile}'
-            self.LogMsg( msg )
-            raise RuntimeError( msg )
-
-        if args.verbose :
-            msg = f' complete. Shape:{df.shape}'
-            self.LogMsg( msg )
-
+            self.LogMsg( f' complete. Shape:{df.shape}' )
         return df
 
     #----------------------------------------------------------
@@ -299,6 +311,18 @@ class MDE:
 
         self.slopeMatrix = df
 
+    #-----------------------------------------------------------
+    @staticmethod
+    def ResolveLibPred( N ):
+        '''Resolve empty lib / pred to the default split for N rows.
+
+        Single source of truth for the [1, N/2], [N/2+1, N] split so
+        MDE.Validate() and ReverseMDE pre-resolution cannot drift.
+        Pure computation: no logging, no mutation.
+        '''
+        half = int( N / 2 )
+        return [ 1, half ], [ half + 1, N ]
+
     #----------------------------------------------------------
     def Validate( self ):
         '''Require input data and target.
@@ -347,16 +371,14 @@ class MDE:
             self.LogMsg( msg )
             raise RuntimeError( msg )
 
-        if len( args.lib ) == 0 :
-            args.lib = [ 1, int( self.dataFrame.shape[0]/2 ) ]
-            msg = f'Validate() set empty lib to {args.lib}'
-            self.LogMsg( msg )
-
-        if len( args.pred ) == 0 :
-            args.pred = [ int( self.dataFrame.shape[0]/2 ) + 1,
-                               self.dataFrame.shape[0] ]
-            msg = f'Validate() set empty pred to {args.pred}'
-            self.LogMsg( msg )
+        if len( args.lib ) == 0 or len( args.pred ) == 0 :
+            lib, pred = self.ResolveLibPred( self.dataFrame.shape[0] )
+            if len( args.lib ) == 0 :
+                args.lib = lib
+                self.LogMsg( f'Validate() set empty lib to {args.lib}' )
+            if len( args.pred ) == 0 :
+                args.pred = pred
+                self.LogMsg( f'Validate() set empty pred to {args.pred}' )
 
         # Resolve optional CCM slope matrix (file -> DataFrame, or pass-through)
         self.LoadSlopeMatrix() # -> self.slopeMatrix
@@ -406,13 +428,11 @@ class MDE:
                 self.LogMsg( msg )
                 raise RuntimeError( msg )
 
-            self.LogMsg( 'Validate(): slope matrix in use; CCM slopes read '
-                         'from matrix, EmbedDimension / CCM skipped, '
-                         'embedDimRhoMin inactive.' )
             if args.verbose :
-                self.LogMsg( f'Validate(): slope matrix {sM.shape[0]}x'
-                             f'{sM.shape[1]}, target '
-                             f'{args.target} present.' )
+                msg = ( 'Validate(): slope matrix provided: '
+                        f'{sM.shape[0]}x{sM.shape[1]}\n'
+                        'No EmbedDimension / CCM.' )
+                self.LogMsg( msg )
 
     #-----------------------------------------------------------
     def CreateOutDir( self ):
