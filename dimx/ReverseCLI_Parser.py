@@ -72,6 +72,14 @@ def ParseReverseCmdLine( argv = None ):
                         help = 'Derive child MDE runs with verbose = False '
                                'so only reverse-level messages appear.')
 
+    parser.add_argument('-fi', '--outFileInterval',
+                        dest = 'outFileInterval', type = float,
+                        action = 'store',
+                        default = None,
+                        help = 'Checkpoint GraphOut to outFile every this '
+                               'many minutes; only active when outFile is '
+                               'set. Default: end-of-run only.')
+
     reverseArgs, mdeArgv = parser.parse_known_args( argv )
 
     # Delegate the remaining argv to the MDE parser ( defaults still

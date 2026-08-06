@@ -5,6 +5,7 @@ from datetime    import datetime
 from typing      import Optional
 from pickle      import dump
 import gzip
+import os
 
 # Community modules
 from pandas import DataFrame
@@ -75,6 +76,7 @@ class ReverseMDE:
                   logProgress      = False, # False => no progress line
                   logEvery         = 1,     # emit every n completed runs
                   logEveryPct      = None,  # or every p percent of N ( wins )
+                  outFileInterval  = None,  # checkpoint every N minutes ( None off )
                   quietChildren    = False, # False => children inherit verbose
                   **overrides ):            # MDEConfig field overrides
         '''Resolve one base MDEConfig, seed the work list, and
@@ -97,6 +99,8 @@ class ReverseMDE:
             logProgress   = getattr( args, 'logProgress',   logProgress )
             logEvery      = getattr( args, 'logEvery',      logEvery )
             logEveryPct   = getattr( args, 'logEveryPct',   logEveryPct )
+            outFileInterval = getattr( args, 'outFileInterval',
+                                       outFileInterval )
             quietChildren = getattr( args, 'quietChildren', quietChildren )
 
             if reverseVariables is None :
@@ -118,6 +122,7 @@ class ReverseMDE:
         self.logProgress   = logProgress
         self.logEvery      = logEvery
         self.logEveryPct   = logEveryPct
+        self.outFileInterval = outFileInterval
         self.quietChildren = quietChildren
 
         # Ensure the frame is in hand, then resolve lib / pred - the
@@ -198,6 +203,9 @@ class ReverseMDE:
                 msg += f'\n lib set to {config.lib}'
             if self._predMutated :
                 msg += f'\n pred set to {config.pred}'
+            if self.outFileInterval and config.outFile :
+                msg += ( f'\n checkpointing GraphOut every '
+                         f'{self.outFileInterval}m to {config.outFile}' )
 
             msg += '\n-----------------------------------------------\n'
             self.LogMsg( msg )
@@ -241,6 +249,9 @@ class ReverseMDE:
             self._logStep = max( 1, self.logEvery )
 
         self._nextLog = 1   # always emit the first completed expansion
+        # Checkpoint clock : wall-time of the last GraphOut dump. Reset
+        # after each write so the interval measures gap-between-writes.
+        self._lastCkpt = datetime.now()
  
         if self.logProgress :
             # One-time header : the fixed context ( ceiling, ETA nature )
@@ -271,6 +282,21 @@ class ReverseMDE:
             self._nDone   += 1
 
             self.GraphOut[ task.target ] = MDEOut
+
+            # Periodic checkpoint : dump the partial GraphOut every
+            # outFileInterval minutes so an unexpected termination on a
+            # multi-day run leaves partial results, not nothing. Pickle
+            # only ( no per-target CSV fan-out ) and atomic ( see
+            # _DumpGraph ). outCSV is written once, at the end.
+            if self.outFileInterval and self.baseConfig.outFile :
+                if ( ( datetime.now() - self._lastCkpt ).total_seconds()
+                     >= self.outFileInterval * 60 ) :
+                    self._DumpGraph()
+                    self._lastCkpt = datetime.now()
+                    if self.logProgress :
+                        self.LogMsg( f'ReverseMDE: checkpoint '
+                                     f'{self._nDone} targets -> '
+                                     f'{self.baseConfig.outFile}' )
 
             nDrivers = 0
             for driver in self._Drivers( MDEOut ) :
@@ -326,16 +352,34 @@ class ReverseMDE:
                 outFile = f'{args.outDir}/{stem}_{target}.csv'
                 MDEOut.to_csv( outFile, index = False )
 
-        if args.outFile :
-            outFile = f'{args.outDir}/{args.outFile}'
-            if '.pkl.gz' in outFile[-7:] :
-                with gzip.open( outFile, 'wb' ) as f :
-                    dump( self.GraphOut, f )
-            else :
-                if '.pkl' not in outFile[-4:] :
-                    outFile = outFile + '.pkl'
-                with open( outFile, 'wb' ) as f :
-                    dump( self.GraphOut, f )
+        self._DumpGraph()
+
+    #-------------------------------------------------------------------
+    def _DumpGraph( self ):
+        '''Atomically pickle GraphOut to outFile ( no-op if unset ).
+
+        Writes to outFile + '.tmp' in the same directory, then
+        os.replace() onto outFile - atomic on POSIX, so a reader or the
+        next run always sees either the previous complete checkpoint or
+        the new one, never a torn file if the process dies mid-write.
+        .pkl.gz when the name ends that way, else .pkl. Shared by the
+        periodic checkpoint and the final Output() so the pickle logic
+        lives in one place.
+        '''
+        args = self.baseConfig
+        if not args.outFile :
+            return
+        outFile = f'{args.outDir}/{args.outFile}'
+        if '.pkl.gz' not in outFile[-7:] and '.pkl' not in outFile[-4:] :
+            outFile = outFile + '.pkl'
+        tmpFile = outFile + '.tmp'
+        if '.pkl.gz' in outFile[-7:] :
+            with gzip.open( tmpFile, 'wb' ) as f :
+                dump( self.GraphOut, f )
+        else :
+            with open( tmpFile, 'wb' ) as f :
+                dump( self.GraphOut, f )
+        os.replace( tmpFile, outFile )
 
     #-------------------------------------------------------------------
     def LogMsg( self, msg, end = '\n', mode = 'a' ):
