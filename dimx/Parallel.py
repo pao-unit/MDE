@@ -60,7 +60,7 @@ def DataFrameBytes( df ):
     return int( df.memory_usage( deep = True ).sum() )
 
 #----------------------------------------------------------------------------
-def PrepareNumericFrame( df, noTime, logMsg = None ):
+def PrepareNumericFrame( df, noTime, verbose = False, logMsg = None ):
     '''Return a contiguous float64, numeric-only DataFrame for cross mapping.
 
        If noTime is False the first column is the time vector; it is dropped
@@ -76,7 +76,7 @@ def PrepareNumericFrame( df, noTime, logMsg = None ):
     dtypes = set( str( t ) for t in numeric.dtypes )
     upcast = len( dtypes ) > 1 or dtypes != { 'float64' }
 
-    if upcast and logMsg is not None :
+    if verbose and upcast and logMsg is not None :
         logMsg( 'PrepareNumericFrame(): mixed/non-float64 numeric dtypes '
                 'upcast to float64; results numerically equivalent to '
                 'tolerance.' )

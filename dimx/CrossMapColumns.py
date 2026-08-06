@@ -44,7 +44,8 @@ def CrossMapColumns( data, columns = [], target = None, E = 0,
         pred = [ 1, data.shape[0] ]
 
     # Numeric-only frame; workers force noTime = True against it.
-    numericDF, _ = PrepareNumericFrame( data, noTime, logMsg = LogMsg )
+    numericDF, _ = PrepareNumericFrame( data, noTime, verbose = verbose,
+                                        logMsg = LogMsg )
 
     # Dictionary of arguments for CrossMapPool initializer = InitWorker()
     argsD = { 'target' : target, 'lib' : lib, 'pred' : pred, 'E' : E,

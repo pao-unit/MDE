@@ -37,7 +37,8 @@ def Run( self ):
     # Numeric-only frame used by both the worker sweep and the parent-side
     # EmbedDimension / CCM validation.  The time column (if noTime is False)
     # is dropped; pyEDM noTime is therefore forced True everywhere below.
-    numericDF, _ = PrepareNumericFrame( self.dataFrame, a.noTime, LogMsg )
+    numericDF, _ = PrepareNumericFrame( self.dataFrame, a.noTime,
+                                        a.verbose, LogMsg )
 
     # mpMethod for pyEDM's own internal pools (EmbedDimension/CCM) - never fork
     edmMethod = ResolveStartMethod( a.mpMethod )

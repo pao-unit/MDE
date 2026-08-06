@@ -296,6 +296,12 @@ class ReverseMDE:
             self._nCeiling = self._Ceiling()
             self.LogMsg( self._ProgressLine() )
 
+        # Persist GraphOut, mirroring MDE.Run()'s own Output() call.
+        # Child MDE runs never write ( _ConfigFor blanks their outFile /
+        # outCSV ), so this is the single, whole-graph write.
+        if self.baseConfig.outFile or self.baseConfig.outCSV :
+            self.Output()
+
     #-------------------------------------------------------------------
     def Output( self ):
         '''Persist GraphOut using the MDEConfig output fields.
@@ -437,12 +443,15 @@ class ReverseMDE:
         removeColumns is the caller's list unioned with the target
         ( order-preserving, de-duplicated ), honored on every run.
         '''
+        # Output destinations belong to the reverse layer, not to each
+        # MDE run: blank outFile / outCSV on every launched run ( root
+        # included ) so no child clobbers the caller's file with a
+        # per-run MDE pickle. ReverseMDE.Output() is the sole writer.
         if task.parent is None :
-            return self.baseConfig
+            return replace( self.baseConfig, outFile = None, outCSV = None )
 
         childVerbose = self.baseConfig.verbose and not self.quietChildren
-        remove = list( self.baseConfig.removeColumns )
-
+        remove       = list( self.baseConfig.removeColumns )
         if task.target not in remove :
             remove.append( task.target )
 
@@ -450,7 +459,9 @@ class ReverseMDE:
                         target        = task.target,
                         removeColumns = remove,
                         plot          = False,
-                        verbose       = childVerbose )
+                        verbose       = childVerbose,
+                        outFile       = None,
+                        outCSV        = None )
 
     #-------------------------------------------------------------------
     def _Drivers( self, MDEOut ):
