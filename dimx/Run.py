@@ -125,7 +125,7 @@ def Run( self ):
                                        logPct = logPct, verbose = a.verbose )
 
             # Rank by decreasing rho
-            L_rhoD = sorted( rhoD_cmap.values(), key = lambda x:x[0], reverse = True )
+            L_rhoD = sorted(rhoD_cmap.values(), key = lambda x:x[0], reverse = True)
 
             # Discard elements below crossMapRhoMin
             rhoD_  = array( [ _[0] for _ in L_rhoD ] )
@@ -142,6 +142,7 @@ def Run( self ):
                 LogMsg( f'{d}-D failed to find valid cross map; '
                         'terminating expansion.' )
                 break
+
             elif rhoD_N < len( L_rhoD ) :
                 L_rhoD = L_rhoD[:rhoD_N]
 
@@ -165,7 +166,8 @@ def Run( self ):
                     newCol_i = cols_i[ 0 ]
                     slope_i  = self.slopeMatrix.loc[ newCol_i, a.target ]
                     if slope_i > a.ccmSlope :
-                        passed.append( ( rho_i.astype( float32 ), newCol_i, slope_i ) )
+                        passed.append( ( rho_i.astype( float32 ),
+                                         newCol_i, slope_i ) )
 
                 self.rhoD_CCM[ d ] = passed
 
@@ -330,7 +332,7 @@ def Run( self ):
     #-------------------------------------------------------------
     # Auxiliary time delays
     #-------------------------------------------------------------
-    if a.timeDelay :
+    if a.timeDelay and len( self.MDEcolumns ) :
         # JP: Needs completion: Does not store any results, just verbose msg
         MDE_iMax   = self.MDErho.round(4).argmax()
         MDE_rhoMax = self.MDErho[ MDE_iMax ]
@@ -393,5 +395,5 @@ def Run( self ):
     if a.outFile or a.outCSV :
         self.Output()
 
-    if a.plot :
+    if a.plot and len( self.MDEcolumns ) :
         self.Plot()

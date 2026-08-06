@@ -349,7 +349,7 @@ class ReverseMDE:
         and whenever the ceiling is unknown.
         '''
         nQueued = len( self._queue )
-        line = f'ReverseMDE: {self._nDone} done, {nQueued} queued'
+        line = f'{self._nDone} done, {nQueued} queued'
 
         if self._nCeiling :
             pct = 100.0 * self._nDone / self._nCeiling

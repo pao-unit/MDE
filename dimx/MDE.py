@@ -565,6 +565,8 @@ class MDE:
         rhoD[dim] is the list of tuples for that dim : [(rho,voxel),...]'''
         rhoD_D = dict() # New dict() with DataFrame's
         for dim,rhoD_ in self.rhoD.items() :
+            if not rhoD_ : # empty terminal dimension: nothing to convert
+                continue
             rho,voxels = zip(*rhoD_)
             df = DataFrame( dict(rho=rho), index = voxels )
             rhoD_D[dim] = df
@@ -578,6 +580,8 @@ class MDE:
         rhoD[dim] is the list of tuples for that dim : [(rho,voxel,slope),...]'''
         rhoD_CCM_D = dict() # New dict() with DataFrame's
         for dim,rhoD_CCM_ in self.rhoD_CCM.items() :
+            if not rhoD_CCM_ :  # empty terminal dimension: nothing passed CCM
+                continue
             rho,voxels,slope = zip(*rhoD_CCM_)
             df = DataFrame( dict(rho=rho, slope=slope), index = voxels )
             rhoD_CCM_D[dim] = df
