@@ -220,29 +220,36 @@ class ReverseMDE:
         logEvery runs ( or every logEveryPct percent of N when set ),
         always including the first and final expansions.
         '''
-        # Ceiling on total runs : the finite column universe, since the
-        # visited set expands each variable at most once. The frame is
-        # guaranteed in hand ( loaded in __init__ ), so N is known here.
-        self._nCeiling = self.dataFrame.shape[1]
-
+        # Progress Logging ---------------------------------------------
+        # N : the finite column universe. The visited set expands each
+        # variable at most once, so N is a hard upper bound on total
+        # runs. Frame is guaranteed in hand ( loaded in __init__ ).
+        self._nCols    = self.dataFrame.shape[1]
+        # Ceiling starts at N and only ratchets downward as the frontier
+        # reveals a tighter exact bound ( see _Ceiling ). Monotone, so
+        # ~% never runs backward.
+        self._nCeiling = self._nCols
+ 
         # Throttle step : logEveryPct wins when set ( scale-invariant
-        # for large N ); else logEvery. max( 1, . ) guards tiny p * N.
-        if self.logEveryPct and self._nCeiling :
-            step = round( self._nCeiling * self.logEveryPct / 100.0 )
+        # for large N ); else logEvery. Pinned to N ( not the shrinking
+        # ceiling ) so the emission cadence stays fixed. max( 1, . )
+        # guards tiny p * N.
+        if self.logEveryPct and self._nCols :
+            step = round( self._nCols * self.logEveryPct / 100.0 )
             self._logStep = max( 1, step )
         else :
             self._logStep = max( 1, self.logEvery )
 
         self._nextLog = 1   # always emit the first completed expansion
-
+ 
         if self.logProgress :
             # One-time header : the fixed context ( ceiling, ETA nature )
             # stated once so recurring lines carry only moving values.
-            ceil = self._nCeiling if self._nCeiling else '?'
-            self.LogMsg( f'ReverseMDE: progress vs <= {ceil} runs; '
+            self.LogMsg( f'ReverseMDE: progress vs <= {self._nCols} runs '
                          f'ETA is an upper bound off a running average; '
                          f'every {self._logStep} runs' )
-
+        #----------------------------------------------------------------
+  
         while self._queue :
             task = self._queue.popleft()
 
@@ -276,6 +283,7 @@ class ReverseMDE:
                 self.LogMsg( f'ReverseMDE: -> {nDrivers} drivers' )
 
             if self.logProgress and self._nDone >= self._nextLog :
+                self._nCeiling = self._Ceiling()
                 self.LogMsg( self._ProgressLine() )
                 # Advance to the next threshold past the current count,
                 # so a large step never lands behind _nDone.
@@ -285,6 +293,7 @@ class ReverseMDE:
         # Always emit a final line so the terminal totals are logged
         # even when the throttle would have skipped the last expansion.
         if self.logProgress and self._nDone :
+            self._nCeiling = self._Ceiling()
             self.LogMsg( self._ProgressLine() )
 
     #-------------------------------------------------------------------
@@ -358,9 +367,40 @@ class ReverseMDE:
         if self._nDone and self._nCeiling :
             avg    = self._elapsed / self._nDone
             remain = avg * max( self._nCeiling - self._nDone, 0 )
-            line += f' ~{remain/60:.0f}m left'
+            if remain < 60 :
+                line += f' ~{remain:.0f}s'
+            else :
+                line += f' ~{remain/60:.0f}m'
 
         return line
+
+    #-------------------------------------------------------------------
+    def _Ceiling( self ):
+        '''Monotone upper bound on total runs, tightened per emission.
+
+        Only queued tasks with depth <= maxDepth will ever run. When
+        the deepest such task sits at maxDepth, no descendant can
+        expand further, so the remaining work is exactly the unique
+        unvisited targets among them - the bound is then EXACT. While
+        a shallower expandable frontier remains, branching below is
+        unknown, so N stands as the loose bound. maxDepth is None ->
+        always N. The result never increases ( ratchets down ), so ~%
+        cannot run backward.
+        '''
+        if self.maxDepth is None :
+            return self._nCeiling   # already N; nothing to tighten
+
+        expandable = [ t for t in self._queue if t.depth <= self.maxDepth ]
+        if not expandable :
+            return self._nDone      # nothing left : done == 100%
+
+        pending = { t.target for t in expandable } - self.Visited
+        if min( t.depth for t in expandable ) == self.maxDepth :
+            bound = self._nDone + len( pending )   # exact
+        else :
+            bound = self._nCols                    # loose fallback
+
+        return min( self._nCeiling, bound )        # monotone
 
     #-------------------------------------------------------------------
     def _RunMDE( self, task ):
