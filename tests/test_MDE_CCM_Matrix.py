@@ -58,5 +58,5 @@ def test_MDE_CCM_Matrix():
     mdeSlope.Run()
 
     # Compare first 3 dimensions
-    assert_frame_equal( mde.MDEOut.iloc[:2,:],
-                        mdeSlope.MDEOut.iloc[:2,:], rtol = 0, atol = 1E-5 )
+    assert_frame_equal( mde.MDEOut.iloc[:3,:],
+                        mdeSlope.MDEOut.iloc[:3,:], rtol = 0, atol = 1E-5 )

@@ -6,3 +6,11 @@ tests/*.csv
 tests/*.pkl
 example/.ipynb_checkpoints
 tests/.ipynb_checkpoints
+.pytest_cache/
+.ci/
+/external/
+/external-validation/
+build/
+dist/
+*.egg-info/
+test-results/

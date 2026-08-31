@@ -17,35 +17,38 @@ Output is a DataFrame with a ranked list of observation vectors and predictive s
 `python -m pip install dimx`
 
 ## Documentation
+
 Documentation is available at [MDE Docs](https://pao-unit.github.io/MDE_docs/)
 
 ---
 
 ## Usage
-MDE is an object-oriented class implementation with command line interface (CLI) support. CLI parameters are configured through command line arguments, MDE class arguments through the MDE class constuctor.
+MDE is an object-oriented class implementation with command line interface (CLI) support. CLI parameters are configured through command line arguments, MDE class arguments through the MDE class constructor.
 
-MDE can be imported as a module and executed with `dimx.Run()` or from the command line with the`ManifoldDimExpand.py` executable as shown below.
+MDE can be imported as a module and executed with `MDE.Run()` or from the command line with the `dimx.ManifoldDimExpand` module as shown below.
 
-CLI example:
+CLI example from a source checkout:
 ```
-./ManifoldDimExpand.py -d ../data/Fly80XY_norm_1061.csv 
--rc index FWD Left_Right -D 10 -t FWD -l 1 300 -p 301 600
--C 10 -ccs 0.01 -emin 0.5 -P -title "MDE FWD" -v
+python -m dimx.ManifoldDimExpand -d dimx/data/Fly80XY_norm_1061.csv \
+  -rc index FWD Left_Right -D 10 -t FWD -l 1 300 -p 301 600 \
+  -C 10 -ccs 0.01 -emin 0.5 -P -v
 ```
 
 MDE class constructor API example:
 ```python
+from importlib.resources import files
 from dimx import MDE
 from pandas import read_csv
 
-df = read_csv( './data/Fly80XY_norm_1061.csv' )
+df = read_csv( files('dimx').joinpath('data/Fly80XY_norm_1061.csv') )
 
 mde = MDE( df, target = 'FWD', 
            removeColumns = ['index','FWD','Left_Right'], 
            D = 10, lib = [1,300], pred = [301,600], ccmSeed = 12345,
-           cores = 10, plot = True, title = "MDE FWD" )
+           crossMapCores = 10 )
 
 mde.Run()
+mde.Plot( title = "MDE FWD" )
 
 mde.MDEOut
   variables       rho
@@ -60,3 +63,9 @@ mde.MDEOut
 8      TS47  0.860541
 9      TS67  0.860230
 ```
+
+## Development
+
+See [Contributing](CONTRIBUTING.md), [Testing](docs/TESTING.md), and
+[Continuous integration](docs/CI.md). The compatibility target for an optional
+accelerated backend is documented in [Acceleration](docs/ACCELERATION.md).

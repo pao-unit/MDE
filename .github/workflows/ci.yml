@@ -1,0 +1,163 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  MPLBACKEND: Agg
+  MPLCONFIGDIR: ${{ github.workspace }}/.ci/matplotlib
+  MKL_NUM_THREADS: "1"
+  NUMEXPR_NUM_THREADS: "1"
+  OMP_NUM_THREADS: "1"
+  OPENBLAS_NUM_THREADS: "1"
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+  PYTHONHASHSEED: "0"
+  PYTHONUNBUFFERED: "1"
+
+jobs:
+  package:
+    name: Build and install package
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install build tools
+        run: python -m pip install --upgrade build pip twine
+      - name: Build and validate distributions
+        run: |
+          python -m build
+          python -m twine check dist/*
+      - name: Install the wheel
+        run: python -m pip install --force-reinstall dist/*.whl
+      - name: Smoke test the installed wheel outside the checkout
+        working-directory: ${{ runner.temp }}
+        run: |
+          mkdir -p "$MPLCONFIGDIR"
+          python -I -c "from importlib import resources; import dimx; \
+            data = resources.files('dimx').joinpath('data'); \
+            assert dimx.__version__; \
+            assert data.joinpath('Fly20_norm_1061.csv').is_file(); \
+            assert data.joinpath('Fly80XY_norm_1061.csv').is_file()"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: distributions
+          path: dist/*
+          if-no-files-found: error
+
+  standard-tests:
+    name: Standard tests (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.14"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Install package and test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --editable ".[test]"
+      - name: Run fast standard tests
+        run: |
+          mkdir -p "$MPLCONFIGDIR" test-results
+          python -m pytest -q \
+            tests/test_Config.py \
+            tests/test_MDE_Unit.py \
+            tests/test_ReverseMDE.py \
+            tests/test_CLI_Parser.py \
+            tests/test_pyEDM_Compatibility.py \
+            tests/test_ExternalValidationAdapter.py \
+            --timeout=120 \
+            --durations=20 \
+            --junitxml="test-results/standard-${{ matrix.python-version }}.xml"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: standard-results-${{ matrix.python-version }}
+          path: test-results/*.xml
+          if-no-files-found: error
+
+  minimum-pyedm:
+    name: Minimum pyEDM compatibility
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install declared minimum and dimx
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "pyEDM==2.5.6"
+          python -m pip install --editable ".[test]"
+          python -c "from importlib.metadata import version; assert version('pyEDM') == '2.5.6'"
+      - name: Verify minimum interface contract
+        run: |
+          mkdir -p "$MPLCONFIGDIR" test-results
+          python -m pytest -q tests/test_pyEDM_Compatibility.py \
+            --timeout=120 \
+            --junitxml=test-results/minimum-pyedm.xml
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: minimum-pyedm-results
+          path: test-results/*.xml
+          if-no-files-found: error
+
+  scientific-regression:
+    name: Bundled scientific regressions
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install package and test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --editable ".[test]"
+      - name: Run every upstream regression test
+        run: |
+          mkdir -p "$MPLCONFIGDIR" test-results
+          python -m pytest -q \
+            tests/test_MDE.py \
+            tests/test_MDE_CCM_Matrix.py \
+            --timeout=1800 \
+            --durations=20 \
+            --junitxml=test-results/scientific.xml
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: scientific-results
+          path: test-results/*.xml
+          if-no-files-found: error
