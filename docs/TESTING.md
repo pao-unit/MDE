@@ -8,7 +8,7 @@ scientific validation.
 | Suite | Owner/source | Unique cases | Role |
 | --- | --- | ---: | --- |
 | Bundled scientific regressions | Pre-existing `pao-unit/MDE` tests | 5 | Authoritative MDE numerical behavior |
-| Fast project tests | Added with this CI foundation | 37 | Configuration, API, CLI, orchestration, dependency, and adapter behavior |
+| Fast project tests | Added with this CI foundation | 40 | Configuration, API, CLI, orchestration, dependency, and adapter behavior |
 | Independent validation | Pinned `pao-unit/EDM_MDE_validation` | 33 | External pyEDM and MDE conformance |
 
 The five bundled tests retain upstream ownership. Three MDE golden tests were
@@ -93,8 +93,9 @@ The first command runs all 31 pyEDM cases without editing their source. The
 adapter restores pyEDM's shared Lorenz sample after every case because the
 external `test_simplex7` modifies it in place; with test isolation all 31 pass.
 The second command runs both MDE cases with the documented legacy-keyword
-translation; its historical Lorenz case is a strict expected failure and its
-Fly case passes. See [test provenance](UPSTREAM_BASELINE.md).
+translation; both pass. Its Lorenz case protects the rule that a leading time
+column is removed exactly once, leaving all four candidate variables available.
+See [test provenance](UPSTREAM_BASELINE.md).
 
 ## Packaging
 

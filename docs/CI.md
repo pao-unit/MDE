@@ -12,7 +12,7 @@ commit hashes, and checkout credentials are not persisted after each step.
 | Job | Coverage | Python | Limit |
 | --- | --- | --- | --- |
 | `package` | sdist/wheel build, metadata check, clean wheel install, packaged data | 3.11 | 20 min |
-| `standard-tests` | 37 fast configuration, API, CLI, reverse-MDE, and compatibility tests | 3.11, 3.14 | 20 min |
+| `standard-tests` | 40 fast configuration, API, CLI, reverse-MDE, and compatibility tests | 3.11, 3.14 | 20 min |
 | `minimum-pyedm` | exact declared floor and required pyEDM call signatures | 3.11 / pyEDM 2.5.6 | 20 min |
 | `scientific-regression` | all five bundled numerical tests | 3.11 | 90 min |
 
@@ -38,14 +38,12 @@ dispatch. It pins `pao-unit/EDM_MDE_validation` by full commit:
 - `external-pyedm`: all 31 independent pyEDM tests, with shared sample data
   restored between cases so an upstream state leak cannot alter later files;
 - `external-mde`: both independent MDE tests, using the documented
-  legacy-keyword adapter; one passes and the historical Lorenz case is a
-  pinned strict expected failure.
+  legacy-keyword adapter; both must pass against their pinned goldens.
 
 The external suite is deliberately separate from pull-request CI because it
 duplicates upstream pyEDM coverage and contains expensive numerical cases. A
 failure is still actionable: dependency updates and GPU backend changes must
-not silently alter these reference results. The one historical MDE expected
-failure is strict, so an unexpected pass requires a golden-provenance review.
+not silently alter these reference results.
 
 ## Branch protection
 

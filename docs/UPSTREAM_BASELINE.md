@@ -30,6 +30,15 @@ pyEDM call interface without replacing the scientific suite. The three MDE
 golden tests now assert selected-variable order as well as rho, and the slope
 matrix test compares the three dimensions its original comment specified.
 
+The v1.2.0 multiprocessing refactor (`69c59ae`) introduced a second leading-
+column removal after `removeTime=True` had already removed the time vector. On
+Lorenz5D this silently removed `V1`, and the same commit deleted the fourth row
+from the bundled golden. The pre-refactor bundled golden and independent
+validation golden both require `V1,0.976646`. This fork makes numeric-frame
+preparation the sole owner of leading-column removal, leaves the input frame
+and the `removeTime` / `noTime` settings unchanged, restores that fourth row,
+and covers all four flag combinations in fast tests.
+
 ## Independent validation suite
 
 `EDM_MDE_validation` contains 33 pytest cases and 31 golden-output files:
@@ -55,10 +64,9 @@ with pristine data. The pytest hook snapshots and restores the Lorenz sample
 after every case, so all 31 external pyEDM tests pass without editing their
 source or reference outputs.
 
-The external Lorenz MDE case is also a strict expected failure: its historical
-golden requires a fourth dimension, while current MDE terminates at the three
-dimensions in its own bundled Lorenz golden. The external Fly MDE case passes
-with only the legacy-keyword adapter.
+Both external MDE cases pass with only the legacy-keyword adapter. The Lorenz
+case is a regression oracle for the four-dimensional result restored above;
+its source and golden remain unmodified.
 
 Known source defects remain visible rather than silently rewriting an external
 snapshot: `test_ccm3` builds NaN data but calls CCM with the clean frame,

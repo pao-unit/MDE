@@ -116,12 +116,10 @@ class MDE:
                                First n column names can be specified with
                                self.args.initColumns
         if dataFile npz      : Select the args.dataName from npz archive
-        if config.removeTim  : drop first column from DataFrame copy
-        
         The state-free core of ReadData(): handles .csv / .feather /
         .npy / .npz and initDataColumns naming, applying no
         columnNames / removeTime filtering ( those stay per-instance in
-        LoadData() / Validate() ). Shared so ReverseMDE can load the
+        LoadData() / Run() ). Shared so ReverseMDE can load the
         frame once, up front, using the same reader MDE uses, without a
         second file parser or formula drift.
         '''
@@ -341,10 +339,6 @@ class MDE:
 
         if self.dataFrame is None :
             self.LoadData()
-
-        if args.removeTime :
-            self.dataFrame = \
-                self.dataFrame.copy().drop(columns = self.dataFrame.columns[0])
 
         if not isinstance( args.removeColumns, list ) :
             msg = f'Validate() removeColumns must be list.'

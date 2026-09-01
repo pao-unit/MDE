@@ -33,7 +33,7 @@ class MDEConfig:
     dataFile:        Optional[str] = None   # DataFrame source file
     slopeMatrixFile: Optional[str] = None   # CCM slope matrix .csv / .feather
     dataName:        Optional[str] = None   # dataName in .npz archive
-    removeTime:      bool          = False  # drop dataFrame first column
+    removeTime:      bool          = False  # drop input's first column for MDE
     noTime:          bool          = False  # first dataFrame column is data
     columnNames:     List[str] = field( default_factory = list ) # partial-match
     initDataColumns: List[str] = field( default_factory = list ) # .npy/.npz column

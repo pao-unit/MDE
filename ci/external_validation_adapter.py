@@ -12,15 +12,6 @@ after every test so later validation files always receive pristine data.
 import pytest
 
 
-# The external Lorenz MDE golden predates the current repository baseline.
-# Strict xfail keeps executing it, fails on any different error, and also fails
-# if it unexpectedly starts passing so its provenance can be reviewed.
-_KNOWN_HISTORICAL_MISMATCHES = {
-    'test_MDE.py::test_mde1' :
-        'historical MDE golden expects an additional fourth Lorenz dimension',
-}
-
-
 #------------------------------------------------------------
 @pytest.fixture( autouse = True )
 def _IsolateLorenzSampleData():
@@ -32,18 +23,6 @@ def _IsolateLorenzSampleData():
         yield
     finally :
         sampleData['Lorenz5D'] = snapshot
-
-
-#------------------------------------------------------------
-def pytest_collection_modifyitems( items ):
-    '''Quarantine only the pinned suite's historical MDE mismatch.'''
-    for item in items :
-        for nodeID, reason in _KNOWN_HISTORICAL_MISMATCHES.items() :
-            if item.nodeid.endswith( nodeID ) :
-                item.add_marker( pytest.mark.xfail( reason = reason,
-                                                    raises = AssertionError,
-                                                    strict = True ) )
-                break
 
 
 #------------------------------------------------------------

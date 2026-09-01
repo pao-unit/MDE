@@ -35,10 +35,13 @@ def Run( self ):
         LogMsg( f'libSizes {self.libSizes}  libSizesVec {self.libSizesVec}')
 
     # Numeric-only frame used by both the worker sweep and the parent-side
-    # EmbedDimension / CCM validation.  The time column (if noTime is False)
-    # is dropped; pyEDM noTime is therefore forced True everywhere below.
+    # EmbedDimension / CCM validation. This is the sole leading-column
+    # preprocessing seam: removeTime explicitly drops it, otherwise noTime
+    # decides whether it is time or data. pyEDM noTime is then forced True
+    # everywhere below.
     numericDF, _ = PrepareNumericFrame( self.dataFrame, a.noTime,
-                                        a.verbose, LogMsg )
+                                        a.verbose, LogMsg,
+                                        removeTime = a.removeTime )
 
     # mpMethod for pyEDM's own internal pools (EmbedDimension/CCM) - never fork
     edmMethod = ResolveStartMethod( a.mpMethod )

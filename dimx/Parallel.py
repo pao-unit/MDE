@@ -60,18 +60,21 @@ def DataFrameBytes( df ):
     return int( df.memory_usage( deep = True ).sum() )
 
 #----------------------------------------------------------------------------
-def PrepareNumericFrame( df, noTime, verbose = False, logMsg = None ):
+def PrepareNumericFrame( df, noTime, verbose = False, logMsg = None,
+                         removeTime = False ):
     '''Return a contiguous float64, numeric-only DataFrame for cross mapping.
 
-       If noTime is False the first column is the time vector; it is dropped
-       since it is not used by MDE.  Mixed / non-float64 numeric dtypes are
+       removeTime explicitly drops the first column. Otherwise noTime=False
+       identifies the first column as the time vector and drops it; noTime=True
+       identifies every column as data. Mixed / non-float64 numeric dtypes are
        upcast to float64 (a single warning is issued: results are then
        numerically equivalent to tolerance rather than bit-identical).
 
        Returns ( numericDF, upcast ).  numericDF carries a default RangeIndex;
        pyEDM lib/pred are 1-offset row positions, so the index is irrelevant.
     '''
-    numeric = df.iloc[ :, 1: ] if not noTime else df
+    dropFirst = removeTime or not noTime
+    numeric   = df.iloc[ :, 1: ] if dropFirst else df
 
     dtypes = set( str( t ) for t in numeric.dtypes )
     upcast = len( dtypes ) > 1 or dtypes != { 'float64' }
