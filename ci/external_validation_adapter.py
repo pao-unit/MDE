@@ -1,38 +1,44 @@
-'''Compatibility hook for the pinned EDM_MDE_validation MDE tests.
+'''Compatibility hook for the pinned EDM_MDE_validation tests.
 
 The independent validation repository predates MDEConfig. Its two MDE tests
 still provide the former ``cores`` and ``title`` keyword arguments. The test
 files and golden outputs remain unmodified; this pytest hook translates only
 the shared argument dictionary immediately before each external MDE test.
+
+The external ``test_simplex7`` also inserts NaNs directly into pyEDM's shared
+Lorenz sample instead of a copy. An automatic fixture restores that sample
+after every test so later validation files always receive pristine data.
 '''
 import pytest
 
 
-# Golden files were created without a dependency lock. These cases are known
-# to differ on the current MDE and pyEDM 2.5.6 stack. Strict xfail keeps
-# executing each case, fails on any different error, and also fails if a case
-# unexpectedly starts passing so its golden provenance can be reviewed.
-_KNOWN_GOLDEN_DRIFT = {
-    'test_SMap.py::test_smap4' :
-        'S-Map prediction golden differs with pyEDM 2.5.6',
-    'test_CCM.py::test_ccm5' :
-        'CCM exclusion-radius golden differs with pyEDM 2.5.6',
-    'test_EDim.py::test_edim1' :
-        'EmbedDimension golden is KDTree/dependency-version sensitive',
-    'test_EDim.py::test_edim6' :
-        'EmbedDimension golden is KDTree/dependency-version sensitive',
-    'test_EDim.py::test_edim7' :
-        'EmbedDimension golden is KDTree/dependency-version sensitive',
+# The external Lorenz MDE golden predates the current repository baseline.
+# Strict xfail keeps executing it, fails on any different error, and also fails
+# if it unexpectedly starts passing so its provenance can be reviewed.
+_KNOWN_HISTORICAL_MISMATCHES = {
     'test_MDE.py::test_mde1' :
-        'historical MDE golden expects a retired fourth Lorenz dimension',
+        'historical MDE golden expects an additional fourth Lorenz dimension',
 }
 
 
 #------------------------------------------------------------
+@pytest.fixture( autouse = True )
+def _IsolateLorenzSampleData():
+    '''Restore shared pyEDM Lorenz data after every external test.'''
+    from pyEDM import sampleData
+
+    snapshot = sampleData['Lorenz5D'].copy( deep = True )
+    try :
+        yield
+    finally :
+        sampleData['Lorenz5D'] = snapshot
+
+
+#------------------------------------------------------------
 def pytest_collection_modifyitems( items ):
-    '''Quarantine only the pinned suite's known current-stack drift.'''
+    '''Quarantine only the pinned suite's historical MDE mismatch.'''
     for item in items :
-        for nodeID, reason in _KNOWN_GOLDEN_DRIFT.items() :
+        for nodeID, reason in _KNOWN_HISTORICAL_MISMATCHES.items() :
             if item.nodeid.endswith( nodeID ) :
                 item.add_marker( pytest.mark.xfail( reason = reason,
                                                     raises = AssertionError,

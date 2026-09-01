@@ -47,19 +47,22 @@ predate `MDEConfig` and still pass `cores` and `title`. The small pytest hook in
 removes the unused plotting title at runtime; the external tests and reference
 outputs remain unchanged.
 
-The suite has no dependency lock and five goldens differ on the MDE-supported
-pyEDM 2.5.6 stack: `test_smap4`, `test_ccm5`, and EmbedDimension cases 1, 6,
-and 7. CI marks exactly these as strict expected failures. They still execute;
-a different failure or an unexpected pass fails the job and requires an
-explicit golden-provenance review.
+The external `test_simplex7` inserts NaNs directly into the shared
+`pyEDM.sampleData["Lorenz5D"]` frame. If all files run in one process without
+isolation, those NaNs change `test_smap4`, `test_ccm5`, and EmbedDimension cases
+1, 6, and 7. Each of those five cases passes against its golden when started
+with pristine data. The pytest hook snapshots and restores the Lorenz sample
+after every case, so all 31 external pyEDM tests pass without editing their
+source or reference outputs.
 
 The external Lorenz MDE case is also a strict expected failure: its historical
 golden requires a fourth dimension, while current MDE terminates at the three
 dimensions in its own bundled Lorenz golden. The external Fly MDE case passes
 with only the legacy-keyword adapter.
 
-Known source defects are also retained rather than silently rewriting an
-external snapshot: `test_ccm3` builds NaN data but calls CCM with the clean
-frame, `test_simplex7` mutates shared sample data, both MDE tests discard the
-selected-variable column, and neither MDE test fixes its CCM seed. Project-owned
-tests must cover behavior that cannot be trusted to these cases.
+Known source defects remain visible rather than silently rewriting an external
+snapshot: `test_ccm3` builds NaN data but calls CCM with the clean frame,
+`test_simplex7` mutates shared sample data, both MDE tests discard the
+selected-variable column, and neither MDE test fixes its CCM seed. The hook
+contains the shared-data side effect; project-owned tests cover behavior that
+cannot be trusted to the remaining cases.

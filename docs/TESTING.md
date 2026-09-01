@@ -3,6 +3,19 @@
 MDE uses layered tests so quick API failures are separated from longer
 scientific validation.
 
+## Test ownership
+
+| Suite | Owner/source | Unique cases | Role |
+| --- | --- | ---: | --- |
+| Bundled scientific regressions | Pre-existing `pao-unit/MDE` tests | 5 | Authoritative MDE numerical behavior |
+| Fast project tests | Added with this CI foundation | 37 | Configuration, API, CLI, orchestration, dependency, and adapter behavior |
+| Independent validation | Pinned `pao-unit/EDM_MDE_validation` | 33 | External pyEDM and MDE conformance |
+
+The five bundled tests retain upstream ownership. Three MDE golden tests were
+strengthened to compare selected-variable identity and order, and the existing
+CCM-matrix test now compares the three dimensions stated in its original
+comment. The external test source and golden files are not modified.
+
 ## Reproducible environment
 
 Install the project and its test extra in an isolated Python 3.11+ environment:
@@ -76,11 +89,12 @@ python -m pytest -q -p ci.external_validation_adapter \
   external-validation/test_MDE.py
 ```
 
-The first command runs all 31 pyEDM cases without editing their source. Five
-known current-stack golden mismatches are strict expected failures, documented
-in [test provenance](UPSTREAM_BASELINE.md). The second runs both MDE cases with
-the documented legacy-keyword translation; its historical Lorenz case is a
-strict expected failure and its Fly case passes.
+The first command runs all 31 pyEDM cases without editing their source. The
+adapter restores pyEDM's shared Lorenz sample after every case because the
+external `test_simplex7` modifies it in place; with test isolation all 31 pass.
+The second command runs both MDE cases with the documented legacy-keyword
+translation; its historical Lorenz case is a strict expected failure and its
+Fly case passes. See [test provenance](UPSTREAM_BASELINE.md).
 
 ## Packaging
 

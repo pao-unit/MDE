@@ -1,11 +1,15 @@
 '''Unit tests for the pinned external-suite compatibility hook.'''
 from types import SimpleNamespace
 
+import pytest
+from pandas.testing import assert_frame_equal
+from pyEDM import sampleData
+
 from ci import external_validation_adapter as adapter
 
 
 #------------------------------------------------------------
-def test_known_golden_drift_is_strict_and_assertion_only():
+def test_historical_mismatch_is_strict_and_assertion_only():
     class Item:
         def __init__( self, nodeID ):
             self.nodeid  = f'external/EDM_MDE_validation/{nodeID}'
@@ -14,19 +18,43 @@ def test_known_golden_drift_is_strict_and_assertion_only():
         def add_marker( self, marker ):
             self.markers.append( marker )
 
-    items = [ Item(nodeID) for nodeID in adapter._KNOWN_GOLDEN_DRIFT ]
-    clean = Item( 'test_Simplex.py::test_simplex1' )
-    items.append( clean )
+    mismatches = [ Item(nodeID) for nodeID in
+                   adapter._KNOWN_HISTORICAL_MISMATCHES ]
+    clean = [ Item( nodeID ) for nodeID in [
+        'test_SMap.py::test_smap4',
+        'test_CCM.py::test_ccm5',
+        'test_EDim.py::test_edim1',
+        'test_EDim.py::test_edim6',
+        'test_EDim.py::test_edim7',
+        'test_Simplex.py::test_simplex1',
+    ] ]
+    items = mismatches + clean
 
     adapter.pytest_collection_modifyitems( items )
 
-    for item in items[:-1] :
+    for item in mismatches :
         assert len( item.markers ) == 1
         marker = item.markers[0]
         assert marker.name == 'xfail'
         assert marker.kwargs['strict'] is True
         assert marker.kwargs['raises'] is AssertionError
-    assert clean.markers == []
+    for item in clean :
+        assert item.markers == []
+
+
+#------------------------------------------------------------
+def test_shared_lorenz_sample_is_restored():
+    baseline  = sampleData['Lorenz5D'].copy( deep = True )
+    isolation = adapter._IsolateLorenzSampleData.__wrapped__()
+
+    next( isolation )
+    try :
+        sampleData['Lorenz5D'].iloc[0, 1] = float('nan')
+    finally :
+        with pytest.raises( StopIteration ) :
+            next( isolation )
+
+    assert_frame_equal( sampleData['Lorenz5D'], baseline )
 
 
 #------------------------------------------------------------
