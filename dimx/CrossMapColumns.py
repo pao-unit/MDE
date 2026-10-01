@@ -115,7 +115,8 @@ def ParseCmdLine():
                          type = int, default = [] )
     parser.add_argument( '-C', '--crossMapCores', dest = 'crossMapCores',
                          type = int, default = None,
-                         help = 'Cross-map sweep core cap; all cores if unset.' )
+                         help = 'Cross-map sweep core cap; '
+                                'all cores if unset.' )
     parser.add_argument( '-mp', '--mpMethod', dest = 'mpMethod', type = str,
                          default = None, help = 'Start method (never fork).' )
     parser.add_argument( '-sM', '--sharedMem', dest = 'sharedMem',
@@ -124,7 +125,8 @@ def ParseCmdLine():
                                 'bytes); 0 forces initargs.' )
     parser.add_argument( '-lp', '--logPct', dest = 'logPct', type = float,
                          default = 0,
-                         help = 'Progress band width (percent); needs verbose.' )
+                         help = 'Progress band width (percent); '
+                                'needs verbose.' )
     parser.add_argument( '-v', '--verbose', dest = 'verbose',
                          action = 'store_true', default = False )
     parser.add_argument( '-g', '--debug', dest = 'debug',

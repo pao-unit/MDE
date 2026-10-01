@@ -1,7 +1,7 @@
 [project]
 name            = "dimx"
 description     = "Manifold Dimensional Expansion"
-dynamic         = ["version","versionDate"]
+dynamic         = ["version"]
 readme          = "README.md"
 license         = "LicenseRef-OIST-License"
 license-files   = ["LICENSE"]
@@ -24,6 +24,10 @@ classifiers = [
   "Programming Language :: Python :: 3",
   "Operating System :: OS Independent",
 ]
+[project.optional-dependencies]
+graph = ["networkx"]
+[project.scripts]
+GraphMDE = "dimx.apps.GraphMDE:Main"
 [project.urls]
 Homepage      = "https://github.com/pao-unit/MDE"
 Documentation = "https://pao-unit.github.io/MDE_docs/"

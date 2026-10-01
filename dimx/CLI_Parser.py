@@ -30,17 +30,12 @@ def ParseCmdLine( argv = None ):
                         default = _cfg.dataName,
                         help = 'Input .npz data name.')
 
-    parser.add_argument('-rT', '--removeTime',
-                        dest = 'removeTime',
-                        action = 'store_true',
-                        default = _cfg.removeTime,
-                        help = 'removeTime.')
-
     parser.add_argument('-nT', '--noTime',
                         dest = 'noTime',
                         action = 'store_true',
                         default = _cfg.noTime,
-                        help = 'noTime.')
+                        help = 'First column is data, not time '
+                               '(pyEDM convention).')
 
     parser.add_argument('-cn', '--columnNames', nargs = '*',
                         dest = 'columnNames', type = str,

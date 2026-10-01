@@ -37,7 +37,7 @@ class MDE:
     #-------------------------------------------------------------------
     def __init__( self,
                   dataFrame   = None, # pandas DataFrame          (runtime data)
-                  slopeMatrix = None, # precomputed CCM slope DataFrame (runtime)
+                  slopeMatrix = None, # precomputed CCM slopes    (runtime data)
                   config      = None, # MDEConfig instance        (object path)
                   args        = None, # argparse Namespace        (CLI path)
                   **overrides ):      # MDEConfig field overrides (keyword path)
@@ -73,7 +73,8 @@ class MDE:
             config = replace( config, **overrides )
         # else: caller-supplied config used as-is.
 
-        # Single resolved parameter container. All methods read self.args.<field>
+        # Single resolved parameter container.
+        # All methods read self.args.<field>
         self.args = config
 
         # Runtime data objects: not configuration, excluded from outFile pickle.
@@ -89,10 +90,10 @@ class MDE:
         self.MDEOut         = None   # DataFrame : { rho, columns }
         self.EDim           = dict() # Map of [column:target] : E (accepted)
         self.rhoD           = dict() # Map of dimension : [L_rhoD]
-        self.rhoD_CCM       = dict() # subset of L_rhoD passing CCM : slopeMatrix
-        self.maxLenRhoD     = self.args.maxLenRhoD     # outFile len limit on rhoD
-        self.maxLenRhoD_CCM = self.args.maxLenRhoD_CCM # outFile limit on rhoD_CCM
-        self._edimCache     = dict() # column : (maxEDim, maxRhoEDim) compute cache
+        self.rhoD_CCM       = dict() # L_rhoD subset passing CCM : slopeMatrix
+        self.maxLenRhoD     = self.args.maxLenRhoD     # outFile limit, rhoD
+        self.maxLenRhoD_CCM = self.args.maxLenRhoD_CCM # outFile limit, rhoD_CCM
+        self._edimCache     = dict() # column : (maxEDim, maxRhoEDim) cache
         self._ccmCache      = dict() # column : slope compute cache
         self.startTime      = None
         self.elapsedTime    = None
@@ -116,12 +117,12 @@ class MDE:
                                First n column names can be specified with
                                self.args.initColumns
         if dataFile npz      : Select the args.dataName from npz archive
-        if config.removeTim  : drop first column from DataFrame copy
-        
+
         The state-free core of ReadData(): handles .csv / .feather /
         .npy / .npz and initDataColumns naming, applying no
-        columnNames / removeTime filtering ( those stay per-instance in
-        LoadData() / Validate() ). Shared so ReverseMDE can load the
+        columnNames filtering ( that stays per-instance in LoadData() ).
+        A time column is kept; Run() drops it per noTime via
+        PrepareNumericFrame(). Shared so ReverseMDE can load the
         frame once, up front, using the same reader MDE uses, without a
         second file parser or formula drift.
         '''
@@ -186,6 +187,14 @@ class MDE:
             # In case the target vector was filtered out, replace it
             if not args.target in columns :
                 columns.append( args.target )
+
+            # noTime False: the first column is time. Keep it first, or
+            # PrepareNumericFrame() would drop a data column in its place.
+            if not args.noTime :
+                timeColumn = df.columns[ 0 ]
+                if timeColumn in columns :
+                    columns.remove( timeColumn )
+                columns.insert( 0, timeColumn )
 
             df = df[ columns ]
 
@@ -284,7 +293,8 @@ class MDE:
 
             if args.verbose :
                 self.LogMsg( 'LoadSlopeMatrix(): .csv float matrix verified; '
-                             f'index reconstructed from {df.shape[1]} columns.' )
+                             'index reconstructed from '
+                             f'{df.shape[1]} columns.' )
 
         elif '.feather' in slopeMatrixFile[-8:] :
             df = read_feather( slopeMatrixFile )
@@ -342,9 +352,12 @@ class MDE:
         if self.dataFrame is None :
             self.LoadData()
 
-        if args.removeTime :
-            self.dataFrame = \
-                self.dataFrame.copy().drop(columns = self.dataFrame.columns[0])
+        # noTime False: first column is time, dropped before cross mapping
+        if not args.noTime and args.target == self.dataFrame.columns[ 0 ] :
+            msg = ( f'Validate() target {args.target} is the first (time) '
+                    'column; set noTime = True if it is data.' )
+            self.LogMsg( msg )
+            raise RuntimeError( msg )
 
         if not isinstance( args.removeColumns, list ) :
             msg = f'Validate() removeColumns must be list.'
@@ -390,7 +403,8 @@ class MDE:
                                   for p in args.pLibSizes ]
 
                 if args.verbose :
-                    msg = f'Validate(): libSizes from pLibSizes: {self.libSizes}'
+                    msg = ( 'Validate(): libSizes from pLibSizes: '
+                            f'{self.libSizes}' )
                     self.LogMsg( msg )
 
             if min( self.libSizes ) < 5 :
@@ -494,7 +508,8 @@ class MDE:
                 rhoD_CCM_copy = deepcopy(self.rhoD_CCM)
                 for i in range( 1, len( self.rhoD_CCM ) + 1 ):
                     if len( self.rhoD_CCM[i] ) > self.maxLenRhoD_CCM :
-                        self.rhoD_CCM[i] = self.rhoD_CCM[i][:self.maxLenRhoD_CCM]
+                        self.rhoD_CCM[i] = \
+                            self.rhoD_CCM[i][:self.maxLenRhoD_CCM]
 
             # .pkl or .pkl.gz supported
             outFile = f'{args.outDir}/{args.outFile}'
@@ -577,7 +592,8 @@ class MDE:
     def rhoD_CCM_to_DF( self ) :
         '''Convert a MDE.rhoD_CCM[dim] to a DataFrame
         rhoD is a dict of lists of tuples at each dimension
-        rhoD[dim] is the list of tuples for that dim : [(rho,voxel,slope),...]'''
+        rhoD[dim] is the list of tuples for that dim :
+            [(rho,voxel,slope),...]'''
         rhoD_CCM_D = dict() # New dict() with DataFrame's
         for dim,rhoD_CCM_ in self.rhoD_CCM.items() :
             if not rhoD_CCM_ :  # empty terminal dimension: nothing passed CCM

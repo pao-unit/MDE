@@ -9,6 +9,7 @@ import os
 
 # Community modules
 from pandas import DataFrame
+from numpy  import nan
 
 # Local modules
 from .Config import MDEConfig
@@ -61,7 +62,7 @@ class ReverseMDE:
 
     The DataFrame is obtained in __init__ : passed directly, or read
     once from config.dataFile via the shared MDE.LoadDataFrame seam -
-    raw read; columnNames / removeTime stay per MDE run.
+    raw read; the time column is dropped per noTime in each MDE Run().
     '''
 
     #-------------------------------------------------------------------
@@ -76,7 +77,7 @@ class ReverseMDE:
                   logProgress      = False, # False => no progress line
                   logEvery         = 1,     # emit every n completed runs
                   logEveryPct      = None,  # or every p percent of N ( wins )
-                  outFileInterval  = None,  # checkpoint every N minutes ( None off )
+                  outFileInterval  = None,  # checkpoint minutes ( None off )
                   quietChildren    = False, # False => children inherit verbose
                   **overrides ):            # MDEConfig field overrides
         '''Resolve one base MDEConfig, seed the work list, and
@@ -129,7 +130,7 @@ class ReverseMDE:
         # same load-then-resolve order MDE.Validate() uses, so it is
         # unconditional here too. If no frame was passed but a dataFile
         # is set, read it once up front via the shared MDE.LoadDataFrame
-        # seam ( raw read; columnNames / removeTime stay per MDE run ).
+        # seam ( raw read; noTime is applied in each MDE Run() ).
         # This makes N known at construction on the dataFile path, so
         # the ceiling and the percentage throttle work there as well.
         if self.dataFrame is None :
@@ -178,6 +179,10 @@ class ReverseMDE:
             # Mode 2 : root drivers supplied; the root is not run.
             if MDEOut is None :
                 MDEOut = self._AsMDEOut( reverseVariables )
+            elif 'variables' not in MDEOut.columns :
+                # Drivers held only in the index : move them into a
+                # variables column so every GraphOut frame reads alike.
+                MDEOut = MDEOut.reset_index( names = 'variables' )
             self.GraphOut[ rootTarget ] = MDEOut
             self.Visited.add( rootTarget )
             self.Order.append( rootTarget )
@@ -517,5 +522,7 @@ class ReverseMDE:
     #-------------------------------------------------------------------
     def _AsMDEOut( self, reverseVariables ):
         '''Wrap a plain list of driver names as a minimal MDEOut
-        frame, so a supplied-list root reads like a computed one.'''
-        return DataFrame( { 'variables' : list( reverseVariables ) } )
+        frame, so a supplied-list root reads like a computed one.
+        rho is NaN : no skill was measured for a supplied list.'''
+        return DataFrame( { 'variables' : list( reverseVariables ),
+                            'rho'       : nan } )

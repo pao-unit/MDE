@@ -232,9 +232,10 @@ class CrossMapPool :
                     os.environ[ k ] = v
 
         if self.logMsg is not None :
+            mode = 'shared' if self.useShared else 'initargs'
             self.logMsg( f'\tCrossMapPool start={self.method} '
                       f'workers={nWorkers} '
-                      f'transport={"shared" if self.useShared else "initargs"}' )
+                      f'transport={mode}' )
 
     #------------------------------------------------------------------------
     def CrossMap( self, candidateColumns, dimension = 1,

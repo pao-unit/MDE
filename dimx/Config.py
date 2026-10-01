@@ -33,11 +33,12 @@ class MDEConfig:
     dataFile:        Optional[str] = None   # DataFrame source file
     slopeMatrixFile: Optional[str] = None   # CCM slope matrix .csv / .feather
     dataName:        Optional[str] = None   # dataName in .npz archive
-    removeTime:      bool          = False  # drop dataFrame first column
     noTime:          bool          = False  # first dataFrame column is data
     columnNames:     List[str] = field( default_factory = list ) # partial-match
-    initDataColumns: List[str] = field( default_factory = list ) # .npy/.npz column
-    removeColumns:   List[str] = field( default_factory = list ) # columns to remove
+    # .npy / .npz initial column names
+    initDataColumns: List[str] = field( default_factory = list )
+    # columns to remove
+    removeColumns:   List[str] = field( default_factory = list )
 
     # --- MDE expansion --------------------------------------------
     D:      int           = 3     # MDE max dimension
@@ -53,7 +54,8 @@ class MDEConfig:
     # CCM libSizes (programmatic only; no CLI flag)
     libSizes:        List[int] = field( default_factory = list )
     # CCM libSizes percentiles
-    pLibSizes:       List[int] = field( default_factory = lambda: [10,15,85,90] )
+    pLibSizes:       List[int] = field(
+                         default_factory = lambda: [10,15,85,90] )
     noCCM:           bool      = False  # do not validate with CCM
     ccmSlope:        float     = 0.01   # CCM convergence criteria
     ccmSeed:         Optional[int] = None # CCM random seed
@@ -77,7 +79,7 @@ class MDEConfig:
     # --- Output limits / destinations -----------------------------
     maxLenRhoD:     Optional[int] = None # Output() cap on rhoD per dim
     maxLenRhoD_CCM: Optional[int] = None # Output() cap on rhoD_CCM per dim
-    outDir:  str           = './'        # output directory (use pathlib for windog)
+    outDir:  str           = './'        # output dir (pathlib for windog)
     outFile: Optional[str] = None        # MDE object -> .pkl or .pkl.gz
     outCSV:  Optional[str] = None        # MDEOut -> .csv
     logFile: Optional[str] = None        # log file

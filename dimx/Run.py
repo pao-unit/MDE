@@ -55,7 +55,8 @@ def Run( self ):
     # (column) label in the matrix, since lookups are slopeMatrix.loc[
     # target, candidate ].  Fail fast on a matrix that does not match data.
     if self.slopeMatrix is not None :
-        missing = [ c for c in dataColumns if c not in self.slopeMatrix.columns ]
+        missing = [ c for c in dataColumns
+                    if c not in self.slopeMatrix.columns ]
         if missing :
             msg = f'Run() slope matrix missing candidate columns: {missing}'
             LogMsg( msg )
@@ -126,7 +127,8 @@ def Run( self ):
                                        logPct = logPct, verbose = a.verbose )
 
             # Rank by decreasing rho
-            L_rhoD = sorted(rhoD_cmap.values(), key = lambda x:x[0], reverse = True)
+            L_rhoD = sorted( rhoD_cmap.values(), key = lambda x:x[0],
+                             reverse = True )
 
             # Discard elements below crossMapRhoMin
             rhoD_  = array( [ _[0] for _ in L_rhoD ] )
@@ -216,7 +218,8 @@ def Run( self ):
                             maxEDim, maxRhoEDim = self._edimCache[ newColumn ]
                         else :
                             if a.debug :
-                                LogMsg( f'   EmbedDimension -> {datetime.now()}' )
+                                LogMsg( '   EmbedDimension -> '
+                                        f'{datetime.now()}' )
                                 LogMsg( f'      {columns_i}' )
 
                             EDimDF = EmbedDimension(
@@ -238,7 +241,8 @@ def Run( self ):
                                          showPlot        = False )
 
                             if a.debug :
-                                LogMsg( f'   EmbedDimension <- {datetime.now()}' )
+                                LogMsg( '   EmbedDimension <- '
+                                        f'{datetime.now()}' )
 
                             if a.firstEMax :
                                 iMax = argrelextrema( EDimDF['rho'].to_numpy(),

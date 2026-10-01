@@ -65,7 +65,7 @@ class Evaluate:
     #-------------------------------------------------------------------
     def __init__( self, dataFrame = None, dataFile = None, outFile = None,
                   mde_columns = [],  columns_range = [], i_columns = [],
-                  columnMatch = [], removeColumns = [], removeTime = False,
+                  columnMatch = [], removeColumns = [], noTime = False,
                   initDataColumns = [], predictVar = None, library = [],
                   prediction = [], E = 0, tau = -1, Tp = 0, components = 3,
                   dmap_k = 5, dmap_epsilon = 'bgh', dmap_alpha = 0.5,
@@ -86,7 +86,7 @@ class Evaluate:
             args.i_columns       = i_columns
             args.columnMatch     = columnMatch
             args.removeColumns   = removeColumns
-            args.removeTime      = removeTime
+            args.noTime          = noTime
             args.initDataColumns = initDataColumns
             args.predictVar      = predictVar
             args.library         = library
@@ -239,7 +239,8 @@ class Evaluate:
                             columns = args.mde_columns,
                             lib = args.library, pred = args.prediction,
                             E = args.E, tau = args.tau, Tp = args.Tp,
-                            embedded = self.embedded, showPlot = False )
+                            embedded = self.embedded, noTime = args.noTime,
+                            showPlot = False )
 
         self.mdeCAE = round( CAE( self.mde['Observations'],
                                   self.mde['Predictions'] ), 2 )
@@ -373,7 +374,8 @@ class Evaluate:
         # MDE ---------------------
         ax = axs[1]
         for col in args.mde_columns[:maxN_] :
-            ax.plot( x_pred, self.data_pred.loc[ :, col ], label = col, lw = lw )
+            ax.plot( x_pred, self.data_pred.loc[ :, col ],
+                     label = col, lw = lw )
         ax.legend( title = 'MDE', ncol = 1, bbox_to_anchor = (1., 1),
                    loc = 'upper left' )
 
@@ -407,7 +409,6 @@ class Evaluate:
                           First n column names can be specified with
                           self.args.initColumns
         Select columns by columns_range, i_columns or columnMatch
-        if args.removeTime : drop first column from DataFrame
         '''
         args = self.args # Shorthand
 
@@ -449,9 +450,6 @@ class Evaluate:
             msg = f'    complete. Shape:{df.shape}'
             print( msg )
 
-        if args.removeTime :
-            df = df.drop( axis = 1, index = 0 )
-
         self.dataFrame = df
 
     #--------------------------------------------------------------
@@ -470,7 +468,8 @@ class Evaluate:
 
         elif len( args.columnMatch ) :
             # Filter df.columns if args.columnMatch specified
-            # Any partial match of args.column in df.columnMatch will be included
+            # Any partial match of args.column in df.columnMatch
+            # will be included
             colD = {}
             for column in args.columnMatch :
                 colD[ column ] = \
@@ -483,6 +482,8 @@ class Evaluate:
 
         else :
             columns = df.columns.to_list() # All columns
+            if not args.noTime :
+                columns = columns[ 1: ]    # first column is time
 
         # In case predictVar was filtered out, replace it
         #if not args.predictVar in columns :
@@ -549,10 +550,10 @@ def ParseCmdLine( argv = None ):
                         action  = 'store', default = [],
                         help    = 'data columns to remove.')
 
-    parser.add_argument('-rT', '--removeTime',
-                        dest    = 'removeTime',
+    parser.add_argument('-nT', '--noTime',
+                        dest    = 'noTime',
                         action  = 'store_true', default = False,
-                        help    = 'removeTime.')
+                        help    = 'First column is data, not time.')
 
     parser.add_argument('-di', '--initDataColumns', nargs = '*',
                         dest    = 'initDataColumns', type = str, 
@@ -674,7 +675,7 @@ def EvaluateCLI():
                      i_columns       = args.i_columns,
                      columnMatch     = args.columnMatch,
                      removeColumns   = args.removeColumns,
-                     removeTime      = args.removeTime,
+                     noTime          = args.noTime,
                      initDataColumns = args.initDataColumns,
                      predictVar      = args.predictVar,
                      library         = args.library,
