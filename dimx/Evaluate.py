@@ -65,7 +65,7 @@ class Evaluate:
     #-------------------------------------------------------------------
     def __init__( self, dataFrame = None, dataFile = None, outFile = None,
                   mde_columns = [],  columns_range = [], i_columns = [],
-                  columnMatch = [], removeColumns = [], noTime = False,
+                  columnMatch = [], noTime = False,
                   initDataColumns = [], predictVar = None, library = [],
                   prediction = [], E = 0, tau = -1, Tp = 0, components = 3,
                   dmap_k = 5, dmap_epsilon = 'bgh', dmap_alpha = 0.5,
@@ -85,7 +85,6 @@ class Evaluate:
             args.columns_range   = columns_range
             args.i_columns       = i_columns
             args.columnMatch     = columnMatch
-            args.removeColumns   = removeColumns
             args.noTime          = noTime
             args.initDataColumns = initDataColumns
             args.predictVar      = predictVar
@@ -117,6 +116,9 @@ class Evaluate:
         self.predictVar_pred = None
 
         self.mde             = None
+        self.mdeEval         = None
+        self.lib_i           = None
+        self.pred_i          = None
         self.mdeCAE          = None
         self.mdeRMSE         = None
         self.mdeCorrCoeff    = None
@@ -192,16 +194,52 @@ class Evaluate:
             msg = 'Validate(): components (-n) required'
             raise RuntimeError( msg )
 
-        # If lib & pred not specified, set to all rows
-        if len( args.library ) == 0 :
-            args.library = [ 1, self.dataFrame.shape[0] ]
-            msg = f'Run() set empty lib to {args.library}'
-            print( msg )
+        # PCA & DMap data must not contain the target : it would be
+        # predicted trivially. Exclude with -cr, -i, or -c
+        if args.predictVar in self.data.columns :
+            msg = f'Validate(): predictVar {args.predictVar} is in ' +\
+                  'the data columns : exclude with -cr, -i or -c'
+            raise RuntimeError( msg )
 
-        if len( args.prediction ) == 0 :
-            args.prediction = [ 1, self.dataFrame.shape[0] ]
-            msg = f'Run() set empty pred to {args.prediction}'
-            print( msg )
+        # Time shift for PCA, DMap targets is forward only, as for Simplex
+        if args.Tp < 0 :
+            msg = f'Validate(): Tp {args.Tp} < 0 not supported'
+            raise RuntimeError( msg )
+
+        # library & prediction are each [ start, stop ]
+        for name in ( 'library', 'prediction' ) :
+            value = getattr( args, name )
+            if len( value ) not in ( 0, 2 ) :
+                msg = f'Validate(): {name} must be [ start, stop ]'
+                raise RuntimeError( msg )
+
+        if bool( args.library ) != bool( args.prediction ) :
+            msg = 'Validate(): specify both library and prediction'
+            raise RuntimeError( msg )
+
+        # Default : 50% split. Prediction starts Tp rows later so that
+        # the last library target, row libStop + Tp, is not in the
+        # prediction set.
+        if len( args.library ) == 0 :
+            nRows           = self.dataFrame.shape[0]
+            half            = nRows // 2
+            args.library    = [ 1, half ]
+            args.prediction = [ half + 1 + args.Tp, nRows ]
+            print( f'Validate(): default library {args.library} ' +\
+                   f'prediction {args.prediction}' )
+
+        # Out-of-sample only : the library rows and the rows holding the
+        # library targets (shifted by Tp) must not enter the prediction
+        libRows  = set( range( args.library[0],    args.library[1] + 1 ) )
+        predRows = set( range( args.prediction[0], args.prediction[1] + 1 ) )
+        libTargetRows = { row + args.Tp for row in libRows }
+
+        leakRows = ( libRows | libTargetRows ) & predRows
+        if leakRows :
+            msg = f'Validate(): library {args.library} overlaps ' +\
+                  f'prediction {args.prediction} (Tp={args.Tp}) ' +\
+                  f'at rows {min( leakRows )}..{max( leakRows )}'
+            raise RuntimeError( msg )
 
     #-------------------------------------------------------------------
     def Run( self ):
@@ -216,16 +254,28 @@ class Evaluate:
             print( msg )
 
         # Subset data into training (library) and test (prediction) sets
-        lib_i  = [ x-1 for x in range(args.library[0],    args.library[1] + 1) ]
-        pred_i = [ x-1 for x in range(args.prediction[0], args.prediction[1]+1)]
+        # Row indices are 0-offset states. With Tp > 0 the target of
+        # state row i is row i + Tp, as in Simplex: state t predicts
+        # time t + Tp. As for Simplex, states are kept if the target
+        # exists in the data, even beyond the window, so that PCA, DMap
+        # & MDE are scored on the same rows.
+        Tp     = args.Tp
+        nRows  = df.shape[0]
+        lib_i  = [ x-1 for x in range(args.library[0],    args.library[1] + 1)
+                   if x - 1 + Tp < nRows ]
+        pred_i = [ x-1 for x in range(args.prediction[0],
+                                      args.prediction[1] + 1)
+                   if x - 1 + Tp < nRows ]
 
+        self.lib_i     = lib_i
+        self.pred_i    = pred_i
         self.data_lib  = data.iloc[ lib_i,  : ]
         self.data_pred = data.iloc[ pred_i, : ]
 
         # Variable to predict : Presumed not in args.i_columns
         predictVar           = df[ args.predictVar ].values
-        self.predictVar_lib  = predictVar[ lib_i  ]
-        self.predictVar_pred = predictVar[ pred_i ]
+        self.predictVar_lib  = predictVar[ [ i + Tp for i in lib_i  ] ]
+        self.predictVar_pred = predictVar[ [ i + Tp for i in pred_i ] ]
 
         if args.verbose:
             print( "Run(): data", df.shape, "data_lib", self.data_lib.shape,
@@ -242,10 +292,20 @@ class Evaluate:
                             embedded = self.embedded, noTime = args.noTime,
                             showPlot = False )
 
-        self.mdeCAE = round( CAE( self.mde['Observations'],
-                                  self.mde['Predictions'] ), 2 )
-        mdeErr = ComputeError( self.mde['Observations'],
-                               self.mde['Predictions'] )
+        # With Tp > 0 Simplex output has Tp leading rows without
+        # Predictions and Tp trailing rows without Observations : keep
+        # the rows with both, the same targets as PCA & DMap.
+        self.mdeEval = self.mde.dropna( subset = [ 'Observations',
+                                                   'Predictions' ] )
+        if len( self.mdeEval ) != len( self.predictVar_pred ) :
+            msg = f'Run(): MDE rows {len( self.mdeEval )} != ' +\
+                  f'PCA, DMap rows {len( self.predictVar_pred )}'
+            raise RuntimeError( msg )
+
+        self.mdeCAE = round( CAE( self.mdeEval['Observations'].values,
+                                  self.mdeEval['Predictions'].values ), 2 )
+        mdeErr = ComputeError( self.mdeEval['Observations'].values,
+                               self.mdeEval['Predictions'].values )
         self.mdeRMSE      = round( mdeErr['RMSE'],  3 )
         self.mdeCorrCoeff = round( mdeErr['rho'],   3 )
         self.mdeRsqr      = round( self.mdeCorrCoeff**2, 3 )
@@ -339,13 +399,11 @@ class Evaluate:
         lw     = 2.5
         maxN_  = min( args.maxN, args.components )
 
-        x_pred_mde = x_pred = [x for x in range(args.prediction[0],
-                                                args.prediction[1] + 1)]
-        x_i = arange( len( x_pred ) )
-
-        if args.E > 0 :
-            x_i        = arange( len( x_pred ) - (args.E-1) )
-            x_pred_mde = x_pred[ (args.E-1): ]
+        # Predictions are at target times, states (modes, MDE columns)
+        # at state times : Tp earlier. All have the same length.
+        Tp      = args.Tp
+        x_state = [ i + 1 for i in self.pred_i ]
+        x_pred  = [ x + Tp for x in x_state ]
 
         # Data & Predictions ------
         if args.plotRho :
@@ -364,7 +422,7 @@ class Evaluate:
                  label = dataLabels['D-Map'], lw = lw )
         ax.plot( x_pred, scaler( self.pcaLinPred ),
                  label = dataLabels['PCA'], lw = lw )
-        ax.plot( x_pred_mde, scaler( self.mde.loc[x_i,'Predictions'] ),
+        ax.plot( x_pred, scaler( self.mdeEval['Predictions'].values ),
                  label = dataLabels['MDE'], lw = lw )
         ax.plot( x_pred, scaler( self.predictVar_pred ),
                  label = args.predictVar, color = 'black', lw = lw )
@@ -374,7 +432,7 @@ class Evaluate:
         # MDE ---------------------
         ax = axs[1]
         for col in args.mde_columns[:maxN_] :
-            ax.plot( x_pred, self.data_pred.loc[ :, col ],
+            ax.plot( x_state, self.dataFrame[ col ].values[ self.pred_i ],
                      label = col, lw = lw )
         ax.legend( title = 'MDE', ncol = 1, bbox_to_anchor = (1., 1),
                    loc = 'upper left' )
@@ -382,14 +440,14 @@ class Evaluate:
         # Diffusion Map ------------
         ax = axs[2]
         for col in range( maxN_ ) :
-            ax.plot( x_pred, self.dmap_pred[ :, col ], label = col, lw = lw )
+            ax.plot( x_state, self.dmap_pred[ :, col ], label = col, lw = lw )
         ax.legend( title = 'Diffusion Map', ncol = 1, bbox_to_anchor = (1., 1),
                    loc = 'upper left' )
 
         # PCA ----------------------
         ax = axs[3]
         for col in range( maxN_ ) : # pca_lib.shape[1] ) :
-            ax.plot( x_pred, self.pca_pred[ :, col ], label = col, lw = lw )
+            ax.plot( x_state, self.pca_pred[ :, col ], label = col, lw = lw )
         ax.legend( title = 'PCA', ncol = 1, bbox_to_anchor = (1., 1),
                    loc = 'upper left' )
 
@@ -545,11 +603,6 @@ def ParseCmdLine( argv = None ):
                         action = 'store', default = [],
                         help = 'Data column names partial match')
 
-    parser.add_argument('-rc', '--removeColumns', nargs = '*',
-                        dest    = 'removeColumns', type = str, 
-                        action  = 'store', default = [],
-                        help    = 'data columns to remove.')
-
     parser.add_argument('-nT', '--noTime',
                         dest    = 'noTime',
                         action  = 'store_true', default = False,
@@ -566,14 +619,16 @@ def ParseCmdLine( argv = None ):
                         help = 'Variable to predict')
 
     parser.add_argument('-l', '--library',
-                        dest   = 'library', nargs = '+', type = int,
+                        dest   = 'library', nargs = 2, type = int,
                         action = 'store', default = [],
-                        help = 'Data library indices. 1-offset')
+                        help = 'Library [start,stop] 1-offset. '
+                               'Default first 50%%')
 
     parser.add_argument('-p', '--prediction',
-                        dest   = 'prediction', nargs = '+', type = int,
+                        dest   = 'prediction', nargs = 2, type = int,
                         action = 'store', default = [],
-                        help = 'Data prediction indices. 1-offset')
+                        help = 'Prediction [start,stop] 1-offset. '
+                               'Default last 50%%')
 
     parser.add_argument('-E', '--E',
                         dest   = 'E', type = int,
@@ -674,7 +729,6 @@ def EvaluateCLI():
                      columns_range   = args.columns_range,
                      i_columns       = args.i_columns,
                      columnMatch     = args.columnMatch,
-                     removeColumns   = args.removeColumns,
                      noTime          = args.noTime,
                      initDataColumns = args.initDataColumns,
                      predictVar      = args.predictVar,

@@ -6,5 +6,5 @@ from .CrossMapColumns import CrossMapColumns
 from .Evaluate        import Evaluate
 from .ReverseMDE      import ReverseMDE
 
-__version__     = "1.4.1"
-__versionDate__ = "2026-10-01"
+__version__     = "1.4.2"
+__versionDate__ = "2026-10-03"

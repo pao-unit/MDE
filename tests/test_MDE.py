@@ -88,7 +88,7 @@ def test_evaluate4():
                         columns_range = [1,81],
                         predictVar    = 'FWD',
                         library       = [1,300],
-                        prediction    = [301,600],
+                        prediction    = [302,600],
                         Tp            = 1,
                         components    = 5,
                         dmap_k        = 15) )
