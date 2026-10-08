@@ -10,8 +10,7 @@ def test_mde_Lorenz5D():
     '''Lorenz5D : D=4'''
     data   = sampleData["Lorenz5D"]
     kwargs = MDEArgs.copy()
-    kwargs.update( dict(removeColumns   = ['V5'],
-                        D               = 4,
+    kwargs.update( dict(D               = 4,
                         target          = 'V5',
                         tau             = -5,
                         exclusionRadius = 10,

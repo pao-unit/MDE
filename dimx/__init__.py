@@ -7,4 +7,4 @@ from .Evaluate        import Evaluate
 from .ReverseMDE      import ReverseMDE
 
 __version__     = "1.4.2"
-__versionDate__ = "2026-10-03"
+__versionDate__ = "2026-10-08"

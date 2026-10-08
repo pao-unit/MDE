@@ -46,10 +46,13 @@ def Run( self ):
     # to available cores so a large maxE does not spawn a process storm.
     edmProcs = max( 1, min( a.maxE, _cpu_count() or 1 ) )
 
-    # Set initial dataColumns as allColumns minus removeColumns
+    # Set initial dataColumns as allColumns minus removeColumns and target.
     # Candidate columns come from the numeric frame (the time column is never
-    # a candidate).  Order doesn't matter; use set for efficiency.
-    dataColumns = list( set( numericDF.columns ) - set( a.removeColumns ) )
+    # a candidate).  The target stays in numericDF (Simplex, EmbedDimension
+    # and CCM need it) but is never a candidate: it cannot be its own
+    # predictor.  Order doesn't matter; use set for efficiency.
+    dataColumns = list( set( numericDF.columns ) -
+                        set( a.removeColumns ) - { a.target } )
 
     # Slope-matrix coverage: every candidate column must be a predicted
     # (column) label in the matrix, since lookups are slopeMatrix.loc[
