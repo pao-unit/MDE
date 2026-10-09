@@ -20,8 +20,10 @@ from pandas import read_csv, DataFrame, read_feather
 
 import matplotlib.pyplot as plt
 
-# Silence: Warning: Ignoring XDG_SESSION_TYPE=wayland on Gnome
-environ["XDG_SESSION_TYPE"] = "xcb"
+# supress warning: pyplot does not like wayland (use pyQt)
+if "XDG_SESSION_TYPE" in environ:
+    if environ["XDG_SESSION_TYPE"] == 'wayland' :
+        environ["XDG_SESSION_TYPE"] = "xcb"
 
 #-----------------------------------------------------------------------
 class Evaluate:
@@ -410,22 +412,22 @@ class Evaluate:
             dataLabels = {'Type'  : 'R',
                           'MDE'   : f'MDE   {self.mdeCorrCoeff:.2f}',
                           'D-Map' : f'D-Map {self.dmapCorrCoeff:.2f}',
-                          'PCA'   : f'PCA    {self.pcaCorrCoeff:.2f}'}
+                          'PCA'   : f'PCA   {self.pcaCorrCoeff:.2f}'}
         else : # annotate rho instead of CAE
             dataLabels = {'Type'  : 'CAE',
                           'MDE'   : f'MDE   {self.mdeCAE:.2f}',
                           'D-Map' : f'D-Map {self.dmapCAE:.2f}',
-                          'PCA'   : f'PCA    {self.pcaCAE:.2f}'}
+                          'PCA'   : f'PCA   {self.pcaCAE:.2f}'}
 
         ax = axs[0]
+        ax.plot( x_pred, scaler( self.predictVar_pred ),
+                 label = args.predictVar, color = 'black', lw = lw )
         ax.plot( x_pred, scaler( self.dmapLinPred ),
                  label = dataLabels['D-Map'], lw = lw )
         ax.plot( x_pred, scaler( self.pcaLinPred ),
                  label = dataLabels['PCA'], lw = lw )
         ax.plot( x_pred, scaler( self.mdeEval['Predictions'].values ),
                  label = dataLabels['MDE'], lw = lw )
-        ax.plot( x_pred, scaler( self.predictVar_pred ),
-                 label = args.predictVar, color = 'black', lw = lw )
         ax.legend( title = dataLabels['Type'], bbox_to_anchor = (1., 1),
                    loc = 'upper left' )
 
