@@ -6,3 +6,4 @@ tests/*.csv
 tests/*.pkl
 example/.ipynb_checkpoints
 tests/.ipynb_checkpoints
+dist/

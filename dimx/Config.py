@@ -47,6 +47,8 @@ class MDEConfig:
     pred:   List[int] = field( default_factory = list ) # EDM pred [start, stop]
     Tp:     int = 1                              # prediction interval
     tau:    int = -1                             # CCM embedding delay
+    # sumDeltaRho: False sums gains only, True sums signed changes
+    sumDeltaRhoSigned: bool = False
 
     # --- CCM / causal inference -----------------------------------
     exclusionRadius: int  = 0      # exclusion radius: CCM, CrossMap

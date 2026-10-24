@@ -270,6 +270,13 @@ def ParseCmdLine( argv = None ):
                         default = _cfg.debug,
                         help = 'debug.')
 
+    parser.add_argument('-sds', '--sumDeltaRhoSigned',
+                        dest = 'sumDeltaRhoSigned',
+                        action = 'store_true',
+                        default = _cfg.sumDeltaRhoSigned,
+                        help = 'sumDeltaRho sums signed changes in '
+                               'candidate rho (default: gains only).')
+
     parser.add_argument('-P', '--plot',
                         dest = 'plot',
                         action = 'store_true',

@@ -12,7 +12,6 @@ import gzip
 # Community modules
 from pandas     import read_csv, read_feather, DataFrame
 from numpy      import array, load
-from matplotlib import pyplot as plt
 
 # Local modules
 from .Config import MDEConfig
@@ -32,7 +31,8 @@ class MDE:
     '''
 
     # Import class methods
-    from .Run import Run
+    from .Run  import Run
+    from .Plot import Plot, PlotRhoD
 
     #-------------------------------------------------------------------
     def __init__( self,
@@ -91,6 +91,7 @@ class MDE:
         self.EDim           = dict() # Map of [column:target] : E (accepted)
         self.rhoD           = dict() # Map of dimension : [L_rhoD]
         self.rhoD_CCM       = dict() # L_rhoD subset passing CCM : slopeMatrix
+        self.sumDeltaRho    = None   # DataFrame : candidate : sumDeltaRho
         self.maxLenRhoD     = self.args.maxLenRhoD     # outFile limit, rhoD
         self.maxLenRhoD_CCM = self.args.maxLenRhoD_CCM # outFile limit, rhoD_CCM
         self._edimCache     = dict() # column : (maxEDim, maxRhoEDim) cache
@@ -534,31 +535,6 @@ class MDE:
                 self.rhoD = rhoD_copy
             if self.maxLenRhoD_CCM is not None:
                 self.rhoD_CCM = rhoD_CCM_copy
-
-    #----------------------------------------------------------
-    def Plot( self, title = '', table_xy = (0.6, 0.85),
-              maxTable = None, fontsize = 12, figsize = (6,5) ):
-        '''Plot an MDEOut DataFrame from MDE.Run()'''
-        df = self.MDEOut.copy()
-        D  = [d+1 for d in range(df.shape[0])]
-        df.insert(0,"D",D)
-
-        if maxTable is None:
-            maxTable = df.shape[0]
-
-        df_string = df.iloc[:maxTable,:].round(3).to_string(index=False)
-
-        ax = df.plot( 'D', 'rho', lw = 4, title = title, figsize = figsize )
-        ax.tick_params(axis='both', labelsize=fontsize)
-        ax.xaxis.label.set_size(fontsize)
-        ax.yaxis.label.set_size(fontsize)
-        ax.set_ylabel('MDE ρ', fontsize = fontsize)
-        ax.annotate( df_string, 
-                     xy = table_xy, xycoords = 'axes fraction',
-                     annotation_clip = False, fontsize = 11,
-                     verticalalignment = 'top', wrap = True,
-                     fontproperties = 'monospace' )
-        plt.show()
 
     #-----------------------------------------------------------
     def LogMsg( self, msg, end = '\n', mode = 'a' ):

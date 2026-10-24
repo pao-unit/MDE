@@ -5,6 +5,7 @@ from os       import cpu_count as _cpu_count
 # Community modules
 from pandas import DataFrame, concat
 from numpy  import append, array, greater, nan_to_num, float32
+from math   import isnan
 from pyEDM  import ComputeError, Embed, EmbedDimension, CCM, Simplex
 from scipy.signal         import argrelextrema
 from sklearn.linear_model import LinearRegression
@@ -13,6 +14,46 @@ from sklearn.linear_model import LinearRegression
 from .Parallel import CrossMapPool, PrepareNumericFrame, ResolveStartMethod
 
 #-------------------------------------------------------------------
+def _AccumulateDeltaRho( rhoCmap, lastRho, sumDelta, signed ):
+    '''Add each candidate's change in rho from its previous dimension.
+
+       rhoCmap : CrossMap result at one dimension, all candidates, before
+                 the crossMapRhoMin downselect : { key : ( rho, cols ) }
+       lastRho : { candidate : rho at its previous dimension }, updated
+       sumDelta: { candidate : running sum of change in rho }, updated
+       signed  : True sums signed changes, False sums gains only
+
+       The first dimension a candidate is seen only seeds lastRho: there
+       is no previous rho to difference. A candidate leaves rhoCmap once
+       selected, so its sum ends at the dimension it was selected.
+
+       Return the number of NaN rho skipped.
+    '''
+    nSkipped = 0
+
+    for rho, cols in rhoCmap.values() :
+        rho = float( rho )
+
+        # A NaN rho would poison the sum, and max( nan, 0 ) is nan: skip
+        # it and keep lastRho so the next valid rho is differenced
+        # against the last valid one
+        if isnan( rho ) :
+            nSkipped += 1
+            continue
+
+        # cols[0] is the new column, cols[1:] are already selected
+        candidate = cols[ 0 ]
+
+        if candidate in lastRho :
+            delta = rho - lastRho[ candidate ]
+            if not signed :
+                delta = max( delta, 0. )
+            sumDelta[ candidate ] += delta
+
+        lastRho[ candidate ] = rho
+
+    return nSkipped
+
 #-------------------------------------------------------------------
 def Run( self ):
     '''Execute MDE workflow'''
@@ -100,6 +141,12 @@ def Run( self ):
     # Widest sweep is d = 1 : every non-removed candidate column.
     maxTasks = len( dataColumns )
 
+    # sumDeltaRho state. Every candidate starts at 0 so that a candidate
+    # that never exceeds crossMapRhoMin, and so is never stored in rhoD,
+    # still has a value.
+    lastRho  = {}
+    sumDelta = { c : 0. for c in dataColumns }
+
     # One persistent pool for the whole run; teardown guaranteed in finally.
     pool = CrossMapPool( numericDF, argsD,
                          crossMapCores = a.crossMapCores,
@@ -128,6 +175,12 @@ def Run( self ):
             # Note embedded = True
             rhoD_cmap = pool.CrossMap( columns, dimension = d,
                                        logPct = logPct, verbose = a.verbose )
+
+            # Accumulate for every candidate, before the downselect below
+            nNaN = _AccumulateDeltaRho( rhoD_cmap, lastRho, sumDelta,
+                                        a.sumDeltaRhoSigned )
+            if nNaN and a.verbose :
+                LogMsg( f'{d}-D sumDeltaRho skipped {nNaN} NaN rho.' )
 
             # Rank by decreasing rho
             L_rhoD = sorted( rhoD_cmap.values(), key = lambda x:x[0],
@@ -387,6 +440,13 @@ def Run( self ):
     # Convert rhoD and rhoD_CCM to dict of DataFrame
     self.rhoD_to_DF()
     self.rhoD_CCM_to_DF()
+
+    # Accumulated in double precision, stored float32 like rhoD: rho is a
+    # correlation, so float32 is ample. Ranked by decreasing sum.
+    self.sumDeltaRho = DataFrame( { 'sumDeltaRho' : sumDelta },
+                                  dtype = float32 )
+    self.sumDeltaRho = self.sumDeltaRho.sort_values( 'sumDeltaRho',
+                                                     ascending = False )
 
     self.elapsedTime = datetime.now() - self.startTime
 
